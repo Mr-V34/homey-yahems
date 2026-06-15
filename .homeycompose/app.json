@@ -38,5 +38,5 @@
   "source": "https://github.com/Mr-V34/homey-yahems",
   "homepage": "https://www.v34.com",
   "support": "mailto:info@v34.com",
-  "permissions": []
+  "permissions": ["homey:manager:api"]
 }

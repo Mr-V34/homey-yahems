@@ -47,9 +47,78 @@ own hardware onto them:
 - **Nothing is actuated until YAHEMS can see real whole-house consumption** (the
   house-meter gate below). Until then it is purely advisory.
 
-> The settings UI for the full placeholder map is on the roadmap. Today the grid
-> reading is supplied via the **Report grid power** flow action (see below) and the
-> per-device decisions are computed from it.
+---
+
+## Device map JSON format
+
+The **Device map** setting holds a JSON string that tells YAHEMS which Homey device
+and capability backs each canonical signal. The shape is:
+
+```json
+{
+  "inputs": [
+    {
+      "signal":     "home_consumption_w",
+      "deviceId":   "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "capability": "measure_power"
+    },
+    {
+      "signal":     "battery_soc_pct",
+      "deviceId":   "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+      "capability": "measure_battery"
+    },
+    {
+      "signal":     "ev_connected",
+      "deviceId":   "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+      "capability": "charging_cable_connected"
+    }
+  ],
+  "control": {
+    "house_meter_present": false
+  }
+}
+```
+
+### Canonical signal keys
+
+| Signal key | Matrix field | Notes |
+|------------|-------------|-------|
+| `home_consumption_w` | `consumptionW` | Net whole-house draw from your grid meter (W) |
+| `battery_soc_pct` | `socPct` | House battery state-of-charge 0–100 |
+| `price_level` | `priceLevel` | Tibber price level 1 (expensive) – 5 (cheap) |
+| `price_ore` | `priceOre` | Spot price in öre/kWh |
+| `ev_connected` | `ev.connected` | Boolean — car plugged in |
+| `ev_battery_soc_pct` | `ev.batterySocPct` | Car battery SoC 0–100 |
+| `appliance_power_w` | `appliancePowerW` | Current draw of high-power appliance (W) |
+
+### Optional `activeAbove`
+
+Add `"activeAbove": <number>` to any entry to convert a numeric power reading into
+a boolean "device is active":
+
+```json
+{
+  "signal":      "ev_connected",
+  "deviceId":    "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+  "capability":  "measure_power",
+  "activeAbove": 15
+}
+```
+
+Here the EV charger's `measure_power` value is treated as `ev_connected = true`
+whenever the draw exceeds 15 W.
+
+### Device IDs
+
+Find a device's UUID in Homey's developer tools at `http://<homey-ip>/api/manager/devices/device/`
+or through the Homey smartphone app (device page → gear icon → ID).
+
+### What happens when a signal is missing
+
+If a device or capability is absent from the snapshot, that signal is **omitted**
+entirely — YAHEMS never substitutes zero. The matrix normaliser then applies its
+safe default (see `lib/matrix.js` → `normalize()`). This means partial maps are
+safe: add signals gradually as you wire up hardware.
 
 ---
 
@@ -59,7 +128,19 @@ own hardware onto them:
 |---------|--------:|---------|
 | **Power target (anchor)** | 4500 W | Net import at/above which the house is at a full peak. The DEFCON bands are thirds of this value — see [DEFCON.md](DEFCON.md). |
 | **Safety floor** | 1000 W | The power target can never effectively drop below this. |
-| **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once YAHEMS can see real house consumption. |
+| **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once `home_consumption_w` (or the flow action) is reliably delivering live house consumption. |
+| **Device map (JSON)** | `{"inputs":[],"control":{"house_meter_present":false}}` | Maps your Homey device IDs and capabilities to the YAHEMS canonical signals above. |
+
+### Advisory → Control gate
+
+| `house_meter_present` setting | Mode | Behaviour |
+|-------------------------------|------|-----------|
+| `false` (default) | **advisory** | Computes decisions and logs them. No writes to any downstream device. |
+| `true` | **control** | (Future) Allows `_applyDecisions()` to actuate mapped devices. |
+
+The setting checkbox takes priority over `control.house_meter_present` in the JSON
+map. Keep the checkbox off until your `home_consumption_w` signal (or the flow
+action) is producing reliable real-time data.
 
 ## Flow cards
 
@@ -73,7 +154,7 @@ own hardware onto them:
 
 **Actions**
 - **Report grid power [W]** — feed a meter reading (positive = importing). This is
-  how the controller currently gets its net-power input.
+  the fallback input when no `home_consumption_w` device is mapped.
 - **Set power target [W]** — adjust the anchor from a flow.
 - **Run all now** — temporarily allow all loads to run.
 

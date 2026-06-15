@@ -1,3 +1,5 @@
 YAHEMS turns your home into its own energy manager. It watches the net power flowing to and from the grid and continuously sets a single, easy-to-read status — DEFCON 5 (calm, plenty of surplus) down to DEFCON 1 (critical peak) — that everything else can react to.
 
 From that status YAHEMS guides your heat pump, hot tub, EV charger, appliances and home battery so the house leans on cheap, solar and self-produced energy and backs off during expensive peaks. It works with whatever hardware you have: devices you own are used for real, the rest is estimated, and nothing is actively controlled until YAHEMS can see your real house consumption. The result is a lower bill with high WAF — it just works in the background.
+
+To do this, YAHEMS reads live capability values (such as power, battery level and price) from the Homey devices you choose to map to it — this is why the app requests the Homey API permission. All processing stays on your Homey; no data leaves your home.

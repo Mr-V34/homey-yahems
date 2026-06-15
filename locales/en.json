@@ -2,11 +2,6 @@
   "pair": {
     "add": "Add YAHEMS Controller"
   },
-  "settings": {
-    "anchor": "Power target (W) — DEFCON 1 above this",
-    "anchor_min": "Safety floor for power target (W)",
-    "house_meter_present": "I have a real house power meter (enables Control)"
-  },
   "defcon": {
     "5": "Calm — surplus",
     "4": "Good",
