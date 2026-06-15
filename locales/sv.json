@@ -2,6 +2,9 @@
   "pair": {
     "add": "Lägg till YAHEMS-styrenhet"
   },
+  "signals": {
+    "consumptionW": "Husets effekt"
+  },
   "defcon": {
     "5": "Lugnt — överskott",
     "4": "Bra",

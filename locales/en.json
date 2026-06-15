@@ -2,6 +2,9 @@
   "pair": {
     "add": "Add YAHEMS Controller"
   },
+  "signals": {
+    "consumptionW": "House power"
+  },
   "defcon": {
     "5": "Calm — surplus",
     "4": "Good",

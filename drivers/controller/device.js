@@ -47,6 +47,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._decisions  = null;
     this._api        = null;  // HomeyAPI instance (null if unavailable)
     this._deviceMap  = hal.validateMap('').map; // safe empty default
+    this._matrix     = matrix.DEFAULT_MATRIX;   // effective matrix; replaced by _loadMatrix()
 
     // Signal-staleness tracking. Tracks the value and when it last changed.
     // Extend this object to track socPct / priceOre when needed later.
@@ -80,8 +81,9 @@ module.exports = class ControllerDevice extends Homey.Device {
       this._api = null;
     }
 
-    // Load the device_map setting.
+    // Load device_map and matrix_override settings.
     this._loadDeviceMap();
+    this._loadMatrix();
 
     // Periodic recompute (every 60 s) plus an immediate run.
     this._interval = this.homey.setInterval(() => this.recompute().catch(this.error), 60000);
@@ -103,9 +105,53 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._deviceMap = map;
   }
 
+  /**
+   * (Re)load, validate, merge, and monotonicity-check the matrix_override setting.
+   *
+   * Validate-then-adopt-or-keep-last-good pattern:
+   *   1. validateMatrixOverride(raw) — parse + shape guard.
+   *   2. mergeMatrix(DEFAULT_MATRIX, override) — deep merge + clamp.
+   *   3. validateMatrix(merged) — monotonicity check.
+   *   On any failure, this._matrix is left unchanged (kept at last good value).
+   *   On success, this._matrix is updated to the merged+clamped matrix.
+   */
+  _loadMatrix() {
+    const raw = (this.getSettings() || {}).matrix_override || '{}';
+
+    // Step 1: validate override shape + parse.
+    const { ok: parseOk, override, errors: parseErrors } = matrix.validateMatrixOverride(raw);
+    if (!parseOk) {
+      this.log(`matrix_override invalid — keeping last good matrix: ${parseErrors.join('; ')}`);
+      return; // keep this._matrix as-is
+    }
+    if (parseErrors.length) {
+      // Warnings (e.g. unknown keys stripped) — log but continue.
+      this.log(`matrix_override warnings: ${parseErrors.join('; ')}`);
+    }
+
+    // Step 2: deep-merge onto DEFAULT_MATRIX with safe clamps.
+    const merged = matrix.mergeMatrix(matrix.DEFAULT_MATRIX, override);
+
+    // Step 3: monotonicity check.
+    const { ok: monoOk, errors: monoErrors } = matrix.validateMatrix(merged);
+    if (!monoOk) {
+      this.log(
+        `matrix_override rejected (monotonicity violation) — keeping last good matrix: ${monoErrors.join('; ')}`
+      );
+      return; // keep this._matrix as-is
+    }
+
+    // All checks passed: adopt the merged matrix.
+    this._matrix = merged;
+    this.log('matrix_override applied successfully');
+  }
+
   async onSettings({ changedKeys }) {
     if (changedKeys.includes('device_map')) {
       this._loadDeviceMap();
+    }
+    if (changedKeys.some((k) => k === 'matrix_override')) {
+      this._loadMatrix();
     }
     await this.recompute();
   }
@@ -224,10 +270,11 @@ module.exports = class ControllerDevice extends Homey.Device {
 
     // Edge-trigger: signal just BECAME stale this cycle.
     if (isStaleNow && !wasStale) {
-      const msg = 'consumptionW signal is stale (unchanged ≥60 min). '
-        + 'Holding DEFCON 3 until the signal recovers.';
+      const label = this.homey.__('signals.consumptionW') || 'House power';
+      const msg = `${label} sensor looks stuck (unchanged for over an hour). `
+        + 'Holding at DEFCON 3 until it updates again.';
       this.log(`[FAULT] ${msg}`);
-      await this._trigStale.trigger(this, { signal: 'consumptionW' }).catch(this.error);
+      await this._trigStale.trigger(this, { signal: label }).catch(this.error);
       // Best-effort Homey notification (WAF: explain the why clearly).
       if (this.homey.notifications && this.homey.notifications.createNotification) {
         await this.homey.notifications.createNotification({ excerpt: `YAHEMS: ${msg}` })
@@ -260,7 +307,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     // Unwrap nested ev spread if halSignals brought ev.* fields; spread
     // already preserves the nested shape because resolveSignals uses _setPath.
 
-    this._decisions = matrix.decideDevices(decideInput);
+    this._decisions = matrix.decideDevices(decideInput, this._matrix);
 
     this.log(
       `[${mode}] D${defcon}${isStaleNow ? ' FAULT:stale' : ''} | ev=${this._decisions.ev.amp}A `

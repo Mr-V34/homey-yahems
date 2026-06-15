@@ -85,7 +85,7 @@
               "en": "Signal",
               "sv": "Signal"
             },
-            "example": "consumptionW"
+            "example": "House power"
           }
         ],
         "args": [
@@ -384,6 +384,19 @@
             "sv": "Kopplar dina fysiska Homey-enheter till YAHEMS kanoniska signaler. Varje rad kräver en signalnyckel, ett Homey-enhets-ID och ett förmåge-ID. Lämna tomt för att köra enbart på flödesåtgärdsdata."
           },
           "value": "{\"inputs\":[],\"control\":{\"house_meter_present\":false}}"
+        },
+        {
+          "id": "matrix_override",
+          "type": "textarea",
+          "label": {
+            "en": "Matrix setpoint overrides (JSON)",
+            "sv": "Matrisens börvärden (JSON)"
+          },
+          "hint": {
+            "en": "Override per-device setpoints as a JSON object. Values are automatically clamped to safe hardware limits and the result is rejected (with the previous safe values kept) if it produces a contradictory schedule. Leave as {} to use the built-in defaults. Example: {\"ev\":{\"bands\":{\"5\":{\"amp\":16},\"3\":{\"amp\":10}}},\"nibe\":{\"bands\":{\"5\":{\"vv\":50}}}}",
+            "sv": "Åsidosätt börvärden per enhet som ett JSON-objekt. Värden begränsas automatiskt till hårdvarans säkerhetsgränser och resultatet avvisas (tidigare säkra värden behålls) om det ger ett motstridigt schema. Lämna som {} för att använda inbyggda standardvärden. Exempel: {\"ev\":{\"bands\":{\"5\":{\"amp\":16},\"3\":{\"amp\":10}}},\"nibe\":{\"bands\":{\"5\":{\"vv\":50}}}}"
+          },
+          "value": "{}"
         }
       ]
     }

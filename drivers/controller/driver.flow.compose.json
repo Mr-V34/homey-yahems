@@ -13,7 +13,7 @@
           "name": "signal",
           "type": "string",
           "title": { "en": "Signal", "sv": "Signal" },
-          "example": "consumptionW"
+          "example": "House power"
         }
       ]
     },
