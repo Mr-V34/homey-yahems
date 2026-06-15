@@ -126,8 +126,7 @@ safe: add signals gradually as you wire up hardware.
 
 | Setting | Default | Purpose |
 |---------|--------:|---------|
-| **Power target (anchor)** | 4500 W | Net import at/above which the house is at a full peak. The DEFCON bands are thirds of this value — see [DEFCON.md](DEFCON.md). |
-| **Safety floor** | 1000 W | The power target can never effectively drop below this. |
+| **Power target (anchor)** | 4500 W | Net import at/above which the house is at a full peak. The DEFCON bands are thirds of this value — see [DEFCON.md](DEFCON.md). Minimum 500 W (apartment owners with a realistic low peak). |
 | **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once `home_consumption_w` (or the flow action) is reliably delivering live house consumption. |
 | **Device map (JSON)** | `{"inputs":[],"control":{"house_meter_present":false}}` | Maps your Homey device IDs and capabilities to the YAHEMS canonical signals above. |
 

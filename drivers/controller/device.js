@@ -4,6 +4,7 @@ const Homey = require('homey');
 const engine = require('../../lib/engine');
 const matrix = require('../../lib/matrix');
 const hal = require('../../lib/hal');
+const simgate = require('../../lib/simgate');
 
 // =============================================================================
 // ACTUATION GATE — read before changing this file
@@ -21,13 +22,21 @@ const hal = require('../../lib/hal');
 // WRITES: UNWIRED AND COMPUTE-ONLY.
 // _applyDecisions() is the SOLE place where future writes would live. It
 // currently performs zero device writes. When wiring actuation:
-//   1. Import simgate and wrap EVERY real capability write in
-//      simgate.guardActuation(() => ...).
-//   2. Only execute when mode === 'control'.
+//   1. Call this._write(deviceId, capability, value) — the single chokepoint.
+//   2. Never call this._api.devices.setCapabilityValue() directly anywhere else
+//      (the build-time guard in test/selftest.js asserts this structurally).
 //   3. Thread sim_mode from onSettings() into simgate.setMode().
 // Do NOT add a sim_mode UI setting until that step — it would introduce
 // locale keys with no backing setting definition.
+//
+// STALENESS: if consumptionW has not changed for STALE_WINDOW_MS (60 min),
+// DEFCON is forced to D3 (fail safe) and yahems_fault is set true.
+// A signal_stale flow trigger fires on the transition into stale (edge only).
 // =============================================================================
+
+// Real net-power always jitters slightly; 60 minutes of byte-identical readings
+// reliably indicates a dead feed (meter offline, Homey integration crash, etc.).
+const STALE_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
 
 module.exports = class ControllerDevice extends Homey.Device {
 
@@ -39,14 +48,27 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._api        = null;  // HomeyAPI instance (null if unavailable)
     this._deviceMap  = hal.validateMap('').map; // safe empty default
 
-    // Ensure required capabilities exist.
-    for (const c of ['yahems_defcon', 'yahems_mode', 'measure_power']) {
+    // Signal-staleness tracking. Tracks the value and when it last changed.
+    // Extend this object to track socPct / priceOre when needed later.
+    this._sig = {
+      consumptionW: { value: null, lastChangedAt: null },
+    };
+
+    // Ensure required capabilities exist (including the new yahems_fault).
+    for (const c of ['yahems_defcon', 'yahems_mode', 'measure_power', 'yahems_fault']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
     }
+
+    // Guard: DEFAULT_MATRIX must always be monotone. Log if it ever isn't
+    // (this would indicate a broken edit to lib/matrix.js — never fires on
+    // a correct matrix; exists so any future author edit is caught at startup).
+    const mv = matrix.validateMatrix(matrix.DEFAULT_MATRIX);
+    if (!mv.ok) this.error(`Matrix invariant violation: ${mv.errors.join('; ')}`);
 
     // Set up flow trigger cards.
     this._trigChanged = this.homey.flow.getDeviceTriggerCard('defcon_changed');
     this._trigRed     = this.homey.flow.getDeviceTriggerCard('red_alert');
+    this._trigStale   = this.homey.flow.getDeviceTriggerCard('signal_stale');
 
     // Initialise HomeyAPI for cross-device reads.
     try {
@@ -113,13 +135,50 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   // ---------------------------------------------------------------------------
+  // Staleness tracking helper
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Update the staleness tracker for a named signal and return whether it is
+   * currently stale. Edge-detects the stale transition and fires the
+   * signal_stale trigger + a Homey notification the first time it goes stale.
+   *
+   * @param {string} signalName  key in this._sig (e.g. 'consumptionW')
+   * @param {*}      currValue   the value observed this cycle
+   * @returns {boolean} true if the signal is stale this cycle
+   */
+  _checkStaleness(signalName, currValue) {
+    const now = Date.now();
+    const sig = this._sig[signalName];
+    if (!sig) return false; // unknown signal key — not tracked
+
+    // First observation: record and not stale.
+    if (sig.lastChangedAt === null) {
+      sig.value = currValue;
+      sig.lastChangedAt = now;
+      return false;
+    }
+
+    // Value changed: reset tracker, not stale.
+    if (currValue !== sig.value) {
+      sig.value = currValue;
+      sig.lastChangedAt = now;
+      return false;
+    }
+
+    // Value unchanged: check age.
+    const ageMs = now - sig.lastChangedAt;
+    const stale = hal.isStale(sig.value, currValue, ageMs, STALE_WINDOW_MS);
+    return stale;
+  }
+
+  // ---------------------------------------------------------------------------
   // Main compute loop
   // ---------------------------------------------------------------------------
 
   async recompute() {
     const s = this.getSettings();
     const anchor = Number(s.anchor) || 4500;
-    const floor  = Number(s.anchor_min) || 1000;
 
     // The settings `house_meter_present` checkbox is authoritative.
     // map.control.house_meter_present is only used if the setting is absent.
@@ -158,17 +217,37 @@ module.exports = class ControllerDevice extends Homey.Device {
       ? Math.max(0, halSignals.consumptionW)
       : Math.max(0, this.gridW);
 
+    // --- Staleness detection on consumptionW ---
+    // Was this signal stale BEFORE checking this cycle (to detect the transition)?
+    const wasStale = this.getCapabilityValue('yahems_fault') === true;
+    const isStaleNow = this._checkStaleness('consumptionW', consumptionW);
+
+    // Edge-trigger: signal just BECAME stale this cycle.
+    if (isStaleNow && !wasStale) {
+      const msg = 'consumptionW signal is stale (unchanged ≥60 min). '
+        + 'Holding DEFCON 3 until the signal recovers.';
+      this.log(`[FAULT] ${msg}`);
+      await this._trigStale.trigger(this, { signal: 'consumptionW' }).catch(this.error);
+      // Best-effort Homey notification (WAF: explain the why clearly).
+      if (this.homey.notifications && this.homey.notifications.createNotification) {
+        await this.homey.notifications.createNotification({ excerpt: `YAHEMS: ${msg}` })
+          .catch(() => {}); // non-fatal
+      }
+    }
+
     // Push through rolling average.
     const r = engine.rollingAverage(this.buffer, consumptionW, 3);
     this.buffer = r.buffer;
 
-    const Teff   = engine.effectiveAnchor(anchor, floor, {});
-    const defcon = engine.defconFromNet(r.average, Teff);
+    // If stale: force DEFCON 3 (fail safe — frost + comfort preserved).
+    // Do not trust the rolling average from a frozen feed.
+    const defcon = isStaleNow ? 3 : engine.defconFromNet(r.average, anchor);
 
-    // Update capabilities.
+    // Update capabilities (own-capability writes — not actuation).
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);
     await this.setCapabilityValue('yahems_mode',   mode).catch(this.error);
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
+    await this.setCapabilityValue('yahems_fault',  isStaleNow).catch(this.error);
 
     // Build the full decideDevices() input: HAL signals spread in, then
     // consumption, defcon and localHour are always set explicitly.
@@ -184,7 +263,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._decisions = matrix.decideDevices(decideInput);
 
     this.log(
-      `[${mode}] D${defcon} | ev=${this._decisions.ev.amp}A `
+      `[${mode}] D${defcon}${isStaleNow ? ' FAULT:stale' : ''} | ev=${this._decisions.ev.amp}A `
       + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
       + `appl=${this._decisions.appliances.action}`,
@@ -208,11 +287,9 @@ module.exports = class ControllerDevice extends Homey.Device {
    * THE SOLE PLACE where future real device writes belong.
    *
    * Currently this method performs ZERO writes to any downstream device.
-   * When actuation is wired:
-   *   - Only proceed when mode === 'control'.
-   *   - Import simgate and wrap every real write:
-   *       simgate.guardActuation(() => someDevice.setCapabilityValue(...))
-   *   - Thread sim_mode from onSettings() into simgate.setMode().
+   * When actuation is wired, it MUST call this._write(deviceId, capability, value)
+   * — never the HomeyAPI form directly. The build-time guard in test/selftest.js
+   * asserts this structurally.
    *
    * @param {object} decisions  result of matrix.decideDevices()
    * @param {string} mode       'advisory' | 'control'
@@ -220,10 +297,51 @@ module.exports = class ControllerDevice extends Homey.Device {
   // eslint-disable-next-line no-unused-vars
   async _applyDecisions(decisions, mode) {
     // COMPUTE ONLY — no device writes here yet.
-    // Future writes MUST be wrapped in simgate.guardActuation() and gated on
-    // mode === 'control' before this method can actuate anything.
+    // Future writes MUST use this._write(deviceId, capability, value).
+    // this.setCapabilityValue(...) is allowed here for OWN capabilities (not actuation).
     if (mode !== 'control') return;
-    // (future actuation code goes here)
+    // (future actuation calls go here, via this._write(...))
+  }
+
+  // ---------------------------------------------------------------------------
+  // Single write chokepoint — THE ONLY method permitted to call
+  // this._api.devices.setCapabilityValue (HomeyAPI write form) to actuate
+  // downstream devices. Own-capability writes (this.setCapabilityValue) are
+  // NOT actuation and must stay outside this method.
+  // ---------------------------------------------------------------------------
+  /**
+   * Write a capability value to a downstream (non-controller) device.
+   *
+   * Safety invariants enforced here:
+   *  1. this._api must be initialised — throw clearly if not.
+   *  2. Current mode must be 'control' — advisory mode writes fail LOUD
+   *     (a silent advisory-mode actuate is a safety bug, not a warning).
+   *  3. Wrapped in simgate.guardActuation() — a sim_mode ON hard-blocks the
+   *     real API call, so stray calls during dry-run are impossible.
+   *
+   * @param {string} deviceId    Homey device UUID (not the controller's own id)
+   * @param {string} capability  Capability id on the target device
+   * @param {*}      value       Value to write
+   */
+  async _write(deviceId, capability, value) {
+    if (!this._api) {
+      throw new Error('_write: HomeyAPI is not initialised — cannot actuate');
+    }
+    // Determine current mode at call time (not cached, always fresh).
+    const s = this.getSettings();
+    const settingMeter = s.house_meter_present;
+    const mapMeter = this._deviceMap.control.house_meter_present === true;
+    const houseMeter = settingMeter === true || (settingMeter === undefined && mapMeter);
+    const mode = houseMeter ? 'control' : 'advisory';
+    if (mode !== 'control') {
+      throw new Error(
+        `_write: refused in advisory mode (deviceId=${deviceId} cap=${capability}). `
+        + 'Enable house_meter_present before actuating.',
+      );
+    }
+    await simgate.guardActuation(() =>
+      this._api.devices.setCapabilityValue({ deviceId, capabilityId: capability, value })
+    );
   }
 
   async onDeleted() {

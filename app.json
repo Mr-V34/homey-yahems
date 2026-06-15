@@ -64,6 +64,39 @@
   "flow": {
     "triggers": [
       {
+        "id": "signal_stale",
+        "title": {
+          "en": "A sensor signal went stale",
+          "sv": "En sensorsignal blev inaktuell"
+        },
+        "titleFormatted": {
+          "en": "Sensor [[signal]] went stale",
+          "sv": "Sensor [[signal]] blev inaktuell"
+        },
+        "hint": {
+          "en": "Fires when a sensor signal has not changed for the staleness window. YAHEMS holds at DEFCON 3 until the signal recovers.",
+          "sv": "Utlöses när en sensorsignal inte förändrats under tidsfönstret. YAHEMS håller DEFCON 3 tills signalen återhämtar sig."
+        },
+        "tokens": [
+          {
+            "name": "signal",
+            "type": "string",
+            "title": {
+              "en": "Signal",
+              "sv": "Signal"
+            },
+            "example": "consumptionW"
+          }
+        ],
+        "args": [
+          {
+            "type": "device",
+            "name": "device",
+            "filter": "driver_id=controller"
+          }
+        ]
+      },
+      {
         "id": "defcon_changed",
         "title": {
           "en": "DEFCON changed",
@@ -284,7 +317,8 @@
       "capabilities": [
         "yahems_defcon",
         "yahems_mode",
-        "measure_power"
+        "measure_power",
+        "yahems_fault"
       ],
       "platforms": [
         "local"
@@ -322,23 +356,8 @@
             "sv": "Nettoimport över detta är DEFCON 1. Banden är tredjedelar av detta."
           },
           "value": 4500,
-          "min": 1000,
+          "min": 500,
           "max": 20000
-        },
-        {
-          "id": "anchor_min",
-          "type": "number",
-          "label": {
-            "en": "Safety floor (W)",
-            "sv": "Säkerhetsgolv (W)"
-          },
-          "hint": {
-            "en": "The power target can never be set below this.",
-            "sv": "Effekttaket kan aldrig sättas under detta."
-          },
-          "value": 1000,
-          "min": 0,
-          "max": 10000
         },
         {
           "id": "house_meter_present",
@@ -388,6 +407,18 @@
       "max": 5,
       "step": 1,
       "decimals": 0,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_fault": {
+      "type": "boolean",
+      "title": {
+        "en": "Sensor fault",
+        "sv": "Sensorfel"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
       "icon": "/assets/icon.svg"
     },
     "yahems_mode": {

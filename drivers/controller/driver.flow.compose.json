@@ -1,6 +1,23 @@
 {
   "triggers": [
     {
+      "id": "signal_stale",
+      "title": { "en": "A sensor signal went stale", "sv": "En sensorsignal blev inaktuell" },
+      "titleFormatted": { "en": "Sensor [[signal]] went stale", "sv": "Sensor [[signal]] blev inaktuell" },
+      "hint": {
+        "en": "Fires when a sensor signal has not changed for the staleness window. YAHEMS holds at DEFCON 3 until the signal recovers.",
+        "sv": "Utlöses när en sensorsignal inte förändrats under tidsfönstret. YAHEMS håller DEFCON 3 tills signalen återhämtar sig."
+      },
+      "tokens": [
+        {
+          "name": "signal",
+          "type": "string",
+          "title": { "en": "Signal", "sv": "Signal" },
+          "example": "consumptionW"
+        }
+      ]
+    },
+    {
       "id": "defcon_changed",
       "title": { "en": "DEFCON changed", "sv": "DEFCON ändrades" },
       "titleFormatted": { "en": "DEFCON changed", "sv": "DEFCON ändrades" },

@@ -28,16 +28,12 @@ to a critical peak. Each new sample is pushed into a small rolling buffer and th
 const r = engine.rollingAverage(buffer, sample, 3); // { buffer, average }
 ```
 
-## Step 3 — Work out the effective anchor
+## Step 3 — The anchor
 
 The **anchor** (called *power target* in the UI) is the import level that counts
-as a full-blown peak. The effective anchor is never allowed below the configured
-**safety floor**, and an optional night-tariff window can multiply it during
-cheap night hours:
-
-```js
-const anchor = engine.effectiveAnchor(anchorW, floorW, { nightTariff, localHour });
-```
+as a full-blown peak. The anchor is the single source of truth — it is used
+directly. There is no separate floor or night-tariff multiplier; those were second
+sources of truth and have been removed.
 
 ## Step 4 — Map net power to a DEFCON level
 
