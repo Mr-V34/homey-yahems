@@ -1,5 +1,4 @@
 {
-  "_comment": "Source manifest. Generated app.json is produced by 'homey app build'. Edit this file.",
   "id": "com.v34.yahems",
   "version": "0.1.0",
   "compatibility": ">=5.0.0",

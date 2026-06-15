@@ -1,5 +1,5 @@
 {
-  "name": "com.v34.yahems",
+  "name": "yahems",
   "version": "0.1.0",
   "description": "YAHEMS — DEFCON energy controller for Homey Pro",
   "main": "app.js",

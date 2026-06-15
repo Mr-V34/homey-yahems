@@ -4,6 +4,12 @@ const Homey = require('homey');
 const engine = require('../../lib/engine');
 const matrix = require('../../lib/matrix');
 
+// ACTUATION GATE (not yet wired):
+// All future capability writes to downstream devices MUST be wrapped in
+// simgate.guardActuation(). The sim_mode setting (read from device settings)
+// must be threaded into guardActuation() inside onSettings() when that step
+// is implemented. Do NOT add a sim_mode UI setting until then — it would
+// introduce locale keys without a corresponding settings definition.
 module.exports = class ControllerDevice extends Homey.Device {
 
   async onInit() {
