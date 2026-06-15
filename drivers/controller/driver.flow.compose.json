@@ -77,6 +77,87 @@
       "title": { "en": "Run all now", "sv": "Kör allt nu" },
       "titleFormatted": { "en": "Run all now", "sv": "Kör allt nu" },
       "hint": { "en": "Temporarily allow all loads to run.", "sv": "Tillåt tillfälligt alla laster att köra." }
+    },
+    {
+      "id": "boost_for_hours",
+      "title": { "en": "Boost load for hours", "sv": "Boosta last i timmar" },
+      "titleFormatted": { "en": "Boost [[load]] for [[hours]] h", "sv": "Boosta [[load]] i [[hours]] h" },
+      "hint": {
+        "en": "Run this load at full setpoints for the specified number of hours, bypassing the price gate. All safety layers still apply.",
+        "sv": "Kör denna last med fulla börvärden i angivet antal timmar, förbi prisporten. Alla säkerhetslager gäller fortfarande."
+      },
+      "args": [
+        {
+          "type": "dropdown",
+          "name": "load",
+          "title": { "en": "Load", "sv": "Last" },
+          "values": [
+            { "id": "nibe",       "label": { "en": "Heat pump",         "sv": "Värmepump" } },
+            { "id": "spa",        "label": { "en": "Spa",               "sv": "Spabad" } },
+            { "id": "ev",         "label": { "en": "EV charger",        "sv": "Elbilsladdare" } },
+            { "id": "battery",    "label": { "en": "Battery",           "sv": "Hembatteri" } },
+            { "id": "appliances", "label": { "en": "Appliances",        "sv": "Vitvaror" } }
+          ]
+        },
+        {
+          "type": "number",
+          "name": "hours",
+          "title": { "en": "Hours", "sv": "Timmar" },
+          "placeholder": { "en": "e.g. 2", "sv": "t.ex. 2" },
+          "min": 0
+        }
+      ]
+    },
+    {
+      "id": "boost_until",
+      "title": { "en": "Boost load until time", "sv": "Boosta last till klockslag" },
+      "titleFormatted": { "en": "Boost [[load]] until [[time]]", "sv": "Boosta [[load]] till [[time]]" },
+      "hint": {
+        "en": "Run this load at full setpoints until the specified local time (today if still ahead, else tomorrow), bypassing the price gate. All safety layers still apply.",
+        "sv": "Kör denna last med fulla börvärden till angivet klockslag (idag om det är framåt, annars imorgon), förbi prisporten. Alla säkerhetslager gäller fortfarande."
+      },
+      "args": [
+        {
+          "type": "dropdown",
+          "name": "load",
+          "title": { "en": "Load", "sv": "Last" },
+          "values": [
+            { "id": "nibe",       "label": { "en": "Heat pump",         "sv": "Värmepump" } },
+            { "id": "spa",        "label": { "en": "Spa",               "sv": "Spabad" } },
+            { "id": "ev",         "label": { "en": "EV charger",        "sv": "Elbilsladdare" } },
+            { "id": "battery",    "label": { "en": "Battery",           "sv": "Hembatteri" } },
+            { "id": "appliances", "label": { "en": "Appliances",        "sv": "Vitvaror" } }
+          ]
+        },
+        {
+          "type": "time",
+          "name": "time",
+          "title": { "en": "Until", "sv": "Till" }
+        }
+      ]
+    },
+    {
+      "id": "cancel_boost",
+      "title": { "en": "Cancel boost for load", "sv": "Avbryt boost för last" },
+      "titleFormatted": { "en": "Cancel boost for [[load]]", "sv": "Avbryt boost för [[load]]" },
+      "hint": {
+        "en": "Cancel an active boost for this load, returning it to normal DEFCON-managed behaviour immediately.",
+        "sv": "Avbryt aktiv boost för denna last och återgå omedelbart till normalt DEFCON-styrt beteende."
+      },
+      "args": [
+        {
+          "type": "dropdown",
+          "name": "load",
+          "title": { "en": "Load", "sv": "Last" },
+          "values": [
+            { "id": "nibe",       "label": { "en": "Heat pump",         "sv": "Värmepump" } },
+            { "id": "spa",        "label": { "en": "Spa",               "sv": "Spabad" } },
+            { "id": "ev",         "label": { "en": "EV charger",        "sv": "Elbilsladdare" } },
+            { "id": "battery",    "label": { "en": "Battery",           "sv": "Hembatteri" } },
+            { "id": "appliances", "label": { "en": "Appliances",        "sv": "Vitvaror" } }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -49,6 +49,11 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._deviceMap  = hal.validateMap('').map; // safe empty default
     this._matrix     = matrix.DEFAULT_MATRIX;   // effective matrix; replaced by _loadMatrix()
 
+    // Per-device boost state: { [kind]: untilTimestampMs }.
+    // Non-persistent — lost on app restart, which fails safe (returns to normal DEFCON).
+    // Boostable kinds: nibe, spa, ev, battery, appliances. comfort is excluded (always 'allow').
+    this._boosts = {};
+
     // Signal-staleness tracking. Tracks the value and when it last changed.
     // Extend this object to track socPct / priceOre when needed later.
     this._sig = {
@@ -174,9 +179,99 @@ module.exports = class ControllerDevice extends Homey.Device {
     return true;
   }
 
+  // ---------------------------------------------------------------------------
+  // Boost helpers
+  // ---------------------------------------------------------------------------
+
+  // Kinds that can be boosted. comfort is excluded — it is always 'allow'.
+  static get BOOSTABLE_KINDS() {
+    return new Set(['nibe', 'spa', 'ev', 'battery', 'appliances']);
+  }
+
+  /**
+   * Return a { [kind]: true } map of currently active boosts, pruning expired entries.
+   * Call at the top of recompute() so expired boosts are automatically cleaned up.
+   */
+  _activeBoosts() {
+    const now = Date.now();
+    const active = {};
+    for (const [kind, untilTs] of Object.entries(this._boosts)) {
+      if (untilTs > now) {
+        active[kind] = true;
+      } else {
+        delete this._boosts[kind]; // prune expired
+      }
+    }
+    return active;
+  }
+
+  /**
+   * Set a boost for a given kind until the specified timestamp.
+   * Unknown or non-boostable kinds are silently ignored.
+   * After setting, recompute() is called so the effect is immediate.
+   */
+  async _setBoost(kind, untilTs) {
+    if (!ControllerDevice.BOOSTABLE_KINDS.has(kind)) {
+      this.log(`_setBoost: ignored unknown/non-boostable kind '${kind}'`);
+      return;
+    }
+    this._boosts[kind] = untilTs;
+    const until = new Date(untilTs).toISOString();
+    this.log(`Boost SET: ${kind} until ${until}`);
+    await this.recompute();
+  }
+
+  /**
+   * Cancel an active boost for a given kind.
+   * After cancelling, recompute() is called so the effect is immediate.
+   */
+  async _cancelBoost(kind) {
+    if (!ControllerDevice.BOOSTABLE_KINDS.has(kind)) {
+      this.log(`_cancelBoost: ignored unknown/non-boostable kind '${kind}'`);
+      return;
+    }
+    delete this._boosts[kind];
+    this.log(`Boost CANCELLED: ${kind}`);
+    await this.recompute();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Flow action handlers — boost cards
+  // ---------------------------------------------------------------------------
+
+  async onBoostForHours(kind, hours) {
+    const untilTs = Date.now() + Math.max(0, hours) * 3_600_000;
+    await this._setBoost(kind, untilTs);
+    return true;
+  }
+
+  async onBoostUntil(kind, timeStr) {
+    // timeStr is "HH:MM" (Homey 'time' type, local time).
+    const [hh, mm] = timeStr.split(':').map(Number);
+    const now = new Date();
+    const candidate = new Date(now);
+    candidate.setHours(hh, mm, 0, 0);
+    // If the target time has already passed today, roll forward to tomorrow.
+    if (candidate.getTime() <= now.getTime()) {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+    await this._setBoost(kind, candidate.getTime());
+    return true;
+  }
+
+  async onCancelBoost(kind) {
+    await this._cancelBoost(kind);
+    return true;
+  }
+
   async onRunNow() {
-    this.log('Run all now requested');
-    // Future: apply a temporary "use everything" profile in the device layer.
+    // GLOBAL boost: set every boostable kind for 1 hour.
+    const untilTs = Date.now() + 3_600_000;
+    for (const kind of ControllerDevice.BOOSTABLE_KINDS) {
+      this._boosts[kind] = untilTs;
+    }
+    this.log('Run-all-now: all boostable kinds boosted for 1 hour');
+    await this.recompute();
     return true;
   }
 
@@ -307,10 +402,17 @@ module.exports = class ControllerDevice extends Homey.Device {
     // Unwrap nested ev spread if halSignals brought ev.* fields; spread
     // already preserves the nested shape because resolveSignals uses _setPath.
 
-    this._decisions = matrix.decideDevices(decideInput, this._matrix);
+    // Resolve active boosts (prunes expired entries as a side effect).
+    const activeBoosts = this._activeBoosts();
+    const activeBoostKinds = Object.keys(activeBoosts);
 
+    this._decisions = matrix.decideDevices(decideInput, this._matrix, activeBoosts);
+
+    const boostTag = activeBoostKinds.length > 0
+      ? ` boost=[${activeBoostKinds.join(',')}]`
+      : '';
     this.log(
-      `[${mode}] D${defcon}${isStaleNow ? ' FAULT:stale' : ''} | ev=${this._decisions.ev.amp}A `
+      `[${mode}] D${defcon}${isStaleNow ? ' FAULT:stale' : ''}${boostTag} | ev=${this._decisions.ev.amp}A `
       + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
       + `appl=${this._decisions.appliances.action}`,
