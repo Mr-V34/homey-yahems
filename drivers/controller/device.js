@@ -29,14 +29,24 @@ const simgate = require('../../lib/simgate');
 // Do NOT add a sim_mode UI setting until that step — it would introduce
 // locale keys with no backing setting definition.
 //
-// STALENESS: if consumptionW has not changed for STALE_WINDOW_MS (60 min),
-// DEFCON is forced to D3 (fail safe) and yahems_fault is set true.
-// A signal_stale flow trigger fires on the transition into stale (edge only).
+// FAULT CONDITIONS (yahems_fault = true → DEFCON forced to D3, fail safe):
+//   STALENESS: consumptionW unchanged for STALE_WINDOW_MS (60 min) — meter
+//   offline or integration crash. signal_stale trigger fires on transition in.
+//   IMPLAUSIBLE: consumptionW > MAX_PLAUSIBLE_W — spoofed/broken meter reading.
+//   signal_stale trigger fires on transition in (with "implausibly high" label).
+//   Both conditions are edge-fired (trigger once on first detection, not every cycle).
 // =============================================================================
 
 // Real net-power always jitters slightly; 60 minutes of byte-identical readings
 // reliably indicates a dead feed (meter offline, Homey integration crash, etc.).
 const STALE_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
+
+// Generous ceiling for net house power on a Swedish 3×25 A (or 3×35 A) service:
+//   3 × 35 A × 230 V ≈ 24 150 W. Round up to 30 kW for margin.
+// Any reading above this almost certainly indicates a spoofed or broken meter.
+// CONFIGURABLE-LATER: promote to a driver setting when real hardware is connected.
+// FLAG to owner for confirmation (default 30000 W).
+const MAX_PLAUSIBLE_W = 30000;
 
 module.exports = class ControllerDevice extends Homey.Device {
 
@@ -358,13 +368,25 @@ module.exports = class ControllerDevice extends Homey.Device {
       ? Math.max(0, halSignals.consumptionW)
       : Math.max(0, this.gridW);
 
+    // --- Implausible-reading check ---
+    // Values above MAX_PLAUSIBLE_W indicate a spoofed or broken meter.
+    // Treat as a fault: clamp the value fed to the buffer so it can recover
+    // quickly once real values return, but force DEFCON 3 regardless.
+    const isImplausible = consumptionW > MAX_PLAUSIBLE_W;
+    const consumptionWClamped = isImplausible ? MAX_PLAUSIBLE_W : consumptionW;
+
     // --- Staleness detection on consumptionW ---
-    // Was this signal stale BEFORE checking this cycle (to detect the transition)?
-    const wasStale = this.getCapabilityValue('yahems_fault') === true;
-    const isStaleNow = this._checkStaleness('consumptionW', consumptionW);
+    // Run staleness check on the (possibly clamped) value so a stuck-at-implausible
+    // feed does not prevent stale detection from also firing later.
+    // Was this signal in fault BEFORE checking this cycle (to detect transitions)?
+    const wasFault = this.getCapabilityValue('yahems_fault') === true;
+    const isStaleNow = this._checkStaleness('consumptionW', consumptionWClamped);
+
+    // Combined fault condition: stale OR implausible.
+    const isFault = isStaleNow || isImplausible;
 
     // Edge-trigger: signal just BECAME stale this cycle.
-    if (isStaleNow && !wasStale) {
+    if (isStaleNow && !wasFault) {
       const label = this.homey.__('signals.consumptionW') || 'House power';
       const msg = `${label} sensor looks stuck (unchanged for over an hour). `
         + 'Holding at DEFCON 3 until it updates again.';
@@ -377,19 +399,35 @@ module.exports = class ControllerDevice extends Homey.Device {
       }
     }
 
-    // Push through rolling average.
-    const r = engine.rollingAverage(this.buffer, consumptionW, 3);
+    // Edge-trigger: reading just BECAME implausible this cycle (and was not already
+    // in fault — avoid double-firing if both conditions arrive simultaneously).
+    if (isImplausible && !wasFault) {
+      const label = this.homey.__('signals.consumptionW') || 'House power';
+      const msg = `${label} reading implausibly high (${consumptionW} W > ${MAX_PLAUSIBLE_W} W limit). `
+        + 'Holding at DEFCON 3 until meter recovers.';
+      this.log(`[FAULT] ${msg}`);
+      await this._trigStale.trigger(this, { signal: label }).catch(this.error);
+      // Best-effort Homey notification.
+      if (this.homey.notifications && this.homey.notifications.createNotification) {
+        await this.homey.notifications.createNotification({ excerpt: `YAHEMS: ${msg}` })
+          .catch(() => {}); // non-fatal
+      }
+    }
+
+    // Push clamped value through rolling average.
+    // If implausible, consumptionWClamped = MAX_PLAUSIBLE_W so the buffer can
+    // recover quickly once real values return (DEFCON is force-3 regardless).
+    const r = engine.rollingAverage(this.buffer, consumptionWClamped, 3);
     this.buffer = r.buffer;
 
-    // If stale: force DEFCON 3 (fail safe — frost + comfort preserved).
-    // Do not trust the rolling average from a frozen feed.
-    const defcon = isStaleNow ? 3 : engine.defconFromNet(r.average, anchor);
+    // If stale OR implausible: force DEFCON 3 (fail safe — frost + comfort preserved).
+    const defcon = isFault ? 3 : engine.defconFromNet(r.average, anchor);
 
     // Update capabilities (own-capability writes — not actuation).
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);
     await this.setCapabilityValue('yahems_mode',   mode).catch(this.error);
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
-    await this.setCapabilityValue('yahems_fault',  isStaleNow).catch(this.error);
+    await this.setCapabilityValue('yahems_fault',  isFault).catch(this.error);
 
     // Build the full decideDevices() input: HAL signals spread in, then
     // consumption, defcon and localHour are always set explicitly.
@@ -411,8 +449,13 @@ module.exports = class ControllerDevice extends Homey.Device {
     const boostTag = activeBoostKinds.length > 0
       ? ` boost=[${activeBoostKinds.join(',')}]`
       : '';
+    const faultTag = isFault
+      ? (isStaleNow && isImplausible ? ' FAULT:stale+implausible'
+        : isImplausible ? ' FAULT:implausible'
+        : ' FAULT:stale')
+      : '';
     this.log(
-      `[${mode}] D${defcon}${isStaleNow ? ' FAULT:stale' : ''}${boostTag} | ev=${this._decisions.ev.amp}A `
+      `[${mode}] D${defcon}${faultTag}${boostTag} | ev=${this._decisions.ev.amp}A `
       + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
       + `appl=${this._decisions.appliances.action}`,
