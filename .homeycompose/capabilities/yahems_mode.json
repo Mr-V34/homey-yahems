@@ -1,0 +1,13 @@
+{
+  "type": "enum",
+  "title": { "en": "Mode", "sv": "Läge" },
+  "desc": { "en": "Advisory (read-only) until a real house meter is connected, then Control.", "sv": "Rådgivande (läsläge) tills en riktig husmätare finns, sedan Styrning." },
+  "getable": true,
+  "setable": false,
+  "uiComponent": "sensor",
+  "insights": false,
+  "values": [
+    { "id": "advisory", "title": { "en": "Advisory", "sv": "Rådgivande" } },
+    { "id": "control", "title": { "en": "Control", "sv": "Styrning" } }
+  ]
+}

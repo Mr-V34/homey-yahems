@@ -1,0 +1,16 @@
+{
+  "name": { "en": "YAHEMS Controller", "sv": "YAHEMS-styrenhet" },
+  "class": "other",
+  "capabilities": ["yahems_defcon", "yahems_mode", "measure_power"],
+  "platforms": ["local"],
+  "connectivity": [],
+  "images": {
+    "small": "/drivers/controller/assets/images/small.png",
+    "large": "/drivers/controller/assets/images/large.png",
+    "xlarge": "/drivers/controller/assets/images/xlarge.png"
+  },
+  "pair": [
+    { "id": "list_devices", "template": "list_devices", "navigation": { "next": "add_devices" } },
+    { "id": "add_devices", "template": "add_devices" }
+  ]
+}

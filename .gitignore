@@ -1,0 +1,19 @@
+# Homey build output
+.homeybuild/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Claude internal
+.claude/
+
+# Env / secrets
+.env

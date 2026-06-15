@@ -1,0 +1,27 @@
+[
+  {
+    "id": "anchor",
+    "type": "number",
+    "label": { "en": "Power target (W)", "sv": "Effekttak (W)" },
+    "hint": { "en": "Net grid import above this is DEFCON 1. Bands are thirds of this value.", "sv": "Nettoimport över detta är DEFCON 1. Banden är tredjedelar av detta." },
+    "value": 4500,
+    "min": 1000,
+    "max": 20000
+  },
+  {
+    "id": "anchor_min",
+    "type": "number",
+    "label": { "en": "Safety floor (W)", "sv": "Säkerhetsgolv (W)" },
+    "hint": { "en": "The power target can never be set below this.", "sv": "Effekttaket kan aldrig sättas under detta." },
+    "value": 1000,
+    "min": 0,
+    "max": 10000
+  },
+  {
+    "id": "house_meter_present",
+    "type": "checkbox",
+    "label": { "en": "Real house meter connected", "sv": "Riktig husmätare ansluten" },
+    "hint": { "en": "Switches from Advisory to Control. Keep off until YAHEMS can see real house consumption.", "sv": "Växlar från Rådgivande till Styrning. Håll av tills YAHEMS ser verklig husförbrukning." },
+    "value": false
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "0.1.0": {
+    "en": "First scaffold: DEFCON net-power engine, controller device with DEFCON/mode/power, and Flow cards to feed meters and react to DEFCON changes.",
+    "sv": "Första grund: DEFCON-nettoeffektmotor, styrenhet med DEFCON/läge/effekt, och Flow-kort för att mata mätare och reagera på DEFCON-ändringar."
+  }
+}

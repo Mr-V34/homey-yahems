@@ -1,0 +1,43 @@
+{
+  "_comment": "Source manifest. Generated app.json is produced by 'homey app build'. Edit this file.",
+  "id": "com.v34.yahems",
+  "version": "0.1.0",
+  "compatibility": ">=5.0.0",
+  "sdk": 3,
+  "platforms": ["local"],
+  "name": {
+    "en": "YAHEMS",
+    "sv": "YAHEMS"
+  },
+  "description": {
+    "en": "DEFCON energy controller — lower your bill, seamlessly.",
+    "sv": "DEFCON-energistyrning — sänk elräkningen, sömlöst."
+  },
+  "tags": {
+    "en": ["energy", "battery", "solar", "ev charging", "peak", "defcon", "tariff"],
+    "sv": ["energi", "batteri", "sol", "elbil", "effekt", "tariff"]
+  },
+  "category": "energy",
+  "brandColor": "#F2600C",
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Peter Persson",
+    "email": "info@v34.com"
+  },
+  "contributors": {
+    "developers": [
+      { "name": "B.Frank" }
+    ]
+  },
+  "bugs": {
+    "url": "https://github.com/Mr-V34/homey-yahems/issues"
+  },
+  "source": "https://github.com/Mr-V34/homey-yahems",
+  "homepage": "https://www.v34.com",
+  "support": "mailto:info@v34.com",
+  "permissions": []
+}

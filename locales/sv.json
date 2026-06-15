@@ -1,0 +1,18 @@
+{
+  "pair": {
+    "add": "Lägg till YAHEMS-styrenhet"
+  },
+  "settings": {
+    "anchor": "Effekttak (W) — DEFCON 1 över detta",
+    "anchor_min": "Säkerhetsgolv för effekttak (W)",
+    "house_meter_present": "Jag har en riktig husmätare (aktiverar Styrning)",
+    "profile": "Energiprofil"
+  },
+  "defcon": {
+    "5": "Lugnt — överskott",
+    "4": "Bra",
+    "3": "Bevaka",
+    "2": "Hög",
+    "1": "Kritisk topp"
+  }
+}
