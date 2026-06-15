@@ -1,0 +1,192 @@
+{
+  "_comment": "This file is generated. Please edit .homeycompose/app.json instead.",
+  "id": "com.v34.yahems",
+  "version": "0.1.0",
+  "compatibility": ">=5.0.0",
+  "sdk": 3,
+  "platforms": ["local"],
+  "name": {
+    "en": "YAHEMS",
+    "sv": "YAHEMS"
+  },
+  "description": {
+    "en": "DEFCON energy controller — lower your bill, seamlessly.",
+    "sv": "DEFCON-energistyrning — sänk elräkningen, sömlöst."
+  },
+  "tags": {
+    "en": ["energy", "battery", "solar", "ev charging", "peak", "defcon", "tariff"],
+    "sv": ["energi", "batteri", "sol", "elbil", "effekt", "tariff"]
+  },
+  "category": "energy",
+  "brandColor": "#F2600C",
+  "images": {
+    "small": "/assets/images/small.png",
+    "large": "/assets/images/large.png",
+    "xlarge": "/assets/images/xlarge.png"
+  },
+  "author": {
+    "name": "Peter Persson",
+    "email": "info@v34.com"
+  },
+  "contributors": {
+    "developers": [
+      { "name": "B.Frank" }
+    ]
+  },
+  "bugs": {
+    "url": "https://github.com/Mr-V34/homey-yahems/issues"
+  },
+  "source": "https://github.com/Mr-V34/homey-yahems",
+  "homepage": "https://www.v34.com",
+  "support": "mailto:info@v34.com",
+  "permissions": [],
+  "capabilities": {
+    "yahems_defcon": {
+      "type": "number",
+      "title": { "en": "DEFCON", "sv": "DEFCON" },
+      "desc": { "en": "Whole-home energy status, 5 (calm) to 1 (critical peak).", "sv": "Husets energistatus, 5 (lugnt) till 1 (kritisk topp)." },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": true,
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "decimals": 0,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_mode": {
+      "type": "enum",
+      "title": { "en": "Mode", "sv": "Läge" },
+      "desc": { "en": "Advisory (read-only) until a real house meter is connected, then Control.", "sv": "Rådgivande (läsläge) tills en riktig husmätare finns, sedan Styrning." },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": false,
+      "values": [
+        { "id": "advisory", "title": { "en": "Advisory", "sv": "Rådgivande" } },
+        { "id": "control", "title": { "en": "Control", "sv": "Styrning" } }
+      ]
+    }
+  },
+  "flow": {
+    "triggers": [
+      {
+        "id": "defcon_changed",
+        "title": { "en": "DEFCON changed", "sv": "DEFCON ändrades" },
+        "hint": { "en": "Fires when the whole-home DEFCON level changes.", "sv": "Utlöses när husets DEFCON-nivå ändras." },
+        "tokens": [
+          { "name": "defcon", "type": "number", "title": { "en": "DEFCON", "sv": "DEFCON" }, "example": 3 },
+          { "name": "mode", "type": "string", "title": { "en": "Mode", "sv": "Läge" }, "example": "advisory" }
+        ],
+        "args": [
+          { "type": "device", "name": "device", "filter": "driver_id=controller" }
+        ]
+      },
+      {
+        "id": "red_alert",
+        "title": { "en": "Critical peak started", "sv": "Kritisk topp startade" },
+        "hint": { "en": "Fires when DEFCON reaches 1.", "sv": "Utlöses när DEFCON når 1." },
+        "args": [
+          { "type": "device", "name": "device", "filter": "driver_id=controller" }
+        ]
+      }
+    ],
+    "conditions": [
+      {
+        "id": "defcon_lte",
+        "title": { "en": "DEFCON is at or below level", "sv": "DEFCON är på eller under nivå" },
+        "titleFormatted": { "en": "DEFCON is [[level]] or lower", "sv": "DEFCON är [[level]] eller lägre" },
+        "args": [
+          { "type": "device", "name": "device", "filter": "driver_id=controller" },
+          {
+            "type": "dropdown",
+            "name": "level",
+            "values": [
+              { "id": "5", "label": { "en": "5", "sv": "5" } },
+              { "id": "4", "label": { "en": "4", "sv": "4" } },
+              { "id": "3", "label": { "en": "3", "sv": "3" } },
+              { "id": "2", "label": { "en": "2", "sv": "2" } },
+              { "id": "1", "label": { "en": "1", "sv": "1" } }
+            ]
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "report_grid_power",
+        "title": { "en": "Report grid power", "sv": "Rapportera näteffekt" },
+        "titleFormatted": { "en": "Report grid power [[power]] W", "sv": "Rapportera näteffekt [[power]] W" },
+        "hint": { "en": "Feed your meter reading here, positive = importing from grid.", "sv": "Mata in din mätaravläsning här, positivt = import från nätet." },
+        "args": [
+          { "type": "device", "name": "device", "filter": "driver_id=controller" },
+          { "type": "number", "name": "power", "title": { "en": "Watts", "sv": "Watt" }, "placeholder": { "en": "W", "sv": "W" } }
+        ]
+      },
+      {
+        "id": "set_anchor",
+        "title": { "en": "Set power target", "sv": "Sätt effekttak" },
+        "titleFormatted": { "en": "Set power target to [[watts]] W", "sv": "Sätt effekttak till [[watts]] W" },
+        "args": [
+          { "type": "device", "name": "device", "filter": "driver_id=controller" },
+          { "type": "number", "name": "watts", "title": { "en": "Watts", "sv": "Watt" } }
+        ]
+      },
+      {
+        "id": "run_now",
+        "title": { "en": "Run all now", "sv": "Kör allt nu" },
+        "hint": { "en": "Temporarily allow all loads to run.", "sv": "Tillåt tillfälligt alla laster att köra." },
+        "args": [
+          { "type": "device", "name": "device", "filter": "driver_id=controller" }
+        ]
+      }
+    ]
+  },
+  "drivers": [
+    {
+      "id": "controller",
+      "name": { "en": "YAHEMS Controller", "sv": "YAHEMS-styrenhet" },
+      "class": "other",
+      "capabilities": ["yahems_defcon", "yahems_mode", "measure_power"],
+      "platforms": ["local"],
+      "connectivity": [],
+      "images": {
+        "small": "/drivers/controller/assets/images/small.png",
+        "large": "/drivers/controller/assets/images/large.png",
+        "xlarge": "/drivers/controller/assets/images/xlarge.png"
+      },
+      "pair": [
+        { "id": "list_devices", "template": "list_devices", "navigation": { "next": "add_devices" } },
+        { "id": "add_devices", "template": "add_devices" }
+      ],
+      "settings": [
+        {
+          "id": "anchor",
+          "type": "number",
+          "label": { "en": "Power target (W)", "sv": "Effekttak (W)" },
+          "hint": { "en": "Net grid import above this is DEFCON 1. Bands are thirds of this value.", "sv": "Nettoimport över detta är DEFCON 1. Banden är tredjedelar av detta." },
+          "value": 4500,
+          "min": 1000,
+          "max": 20000
+        },
+        {
+          "id": "anchor_min",
+          "type": "number",
+          "label": { "en": "Safety floor (W)", "sv": "Säkerhetsgolv (W)" },
+          "hint": { "en": "The power target can never be set below this.", "sv": "Effekttaket kan aldrig sättas under detta." },
+          "value": 1000,
+          "min": 0,
+          "max": 10000
+        },
+        {
+          "id": "house_meter_present",
+          "type": "checkbox",
+          "label": { "en": "Real house meter connected", "sv": "Riktig husmätare ansluten" },
+          "hint": { "en": "Switches from Advisory to Control. Keep off until YAHEMS can see real house consumption.", "sv": "Växlar från Rådgivande till Styrning. Håll av tills YAHEMS ser verklig husförbrukning." },
+          "value": false
+        }
+      ]
+    }
+  ]
+}
