@@ -2,6 +2,7 @@
 
 const Homey = require('homey');
 const engine = require('../../lib/engine');
+const matrix = require('../../lib/matrix');
 
 module.exports = class ControllerDevice extends Homey.Device {
 
@@ -9,6 +10,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     this.buffer = [];
     this.gridW = 0;
     this._lastDefcon = null;
+    this._decisions = null;
 
     for (const c of ['yahems_defcon', 'yahems_mode', 'measure_power']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
@@ -58,6 +60,22 @@ module.exports = class ControllerDevice extends Homey.Device {
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);
     await this.setCapabilityValue('yahems_mode', mode).catch(this.error);
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
+
+    // Resolve per-device decisions. The grid average is currently the only
+    // meter the app has, so it stands in for whole-house consumption; every
+    // other signal (SOC/price/EV) defaults inside decideDevices() until those
+    // sources are wired. COMPUTE ONLY — nothing is actuated here yet.
+    this._decisions = matrix.decideDevices({
+      defcon,
+      consumptionW: Math.max(0, r.average),
+      localHour: new Date().getHours(),
+    });
+    this.log(
+      `decisions D${defcon}: ev=${this._decisions.ev.amp}A `
+      + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
+      + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
+      + `appl=${this._decisions.appliances.action}`,
+    );
 
     if (defcon !== this._lastDefcon) {
       await this._trigChanged.trigger(this, { defcon, mode }).catch(this.error);
