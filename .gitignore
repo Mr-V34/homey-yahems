@@ -14,9 +14,8 @@ Thumbs.db
 *.swp
 *~
 
-# Local tooling — keep agents in version control (history/rollback), ignore local settings/state
-.claude/*
-!.claude/agents/
+# Local tooling — ignore entirely (agent instructions etc. stay local, never published)
+.claude/
 
 # Logs
 *.log
