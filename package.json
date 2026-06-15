@@ -4,6 +4,8 @@
   "description": "YAHEMS — DEFCON energy controller for Homey Pro",
   "main": "app.js",
   "engines": { "node": ">=18.0.0" },
-  "scripts": {},
+  "scripts": {
+    "test": "node test/selftest.js"
+  },
   "dependencies": {}
 }

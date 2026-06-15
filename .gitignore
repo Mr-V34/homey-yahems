@@ -11,9 +11,27 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+*.swp
+*~
 
-# Claude internal
-.claude/
+# Local tooling — keep agents in version control (history/rollback), ignore local settings/state
+.claude/*
+!.claude/agents/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Test / coverage
+coverage/
+
+# Homey packaging output
+*.tgz
 
 # Env / secrets
+# env.json holds Homey app secrets (Homey.env) — MUST never be committed.
+env.json
 .env
+.env.*
+!.env.example
