@@ -28,6 +28,7 @@ cards below. After pairing you will see three capabilities:
 |------------|---------|
 | `yahems_defcon` | The current DEFCON level (1–5), shown as a sensor. |
 | `yahems_mode` | `advisory` (read-only) or `control` (acting on the house). |
+| `yahems_source` | Where the power reading comes from: `measured`, `grid_ct`, `flow`, or `estimated`. |
 | `measure_power` | The smoothed net grid power the level is computed from. |
 
 ---
@@ -49,10 +50,21 @@ own hardware onto them:
 
 ---
 
-## Device map JSON format
+## Mapping devices — the App Settings page
 
-The **Device map** setting holds a JSON string that tells YAHEMS which Homey device
-and capability backs each canonical signal. The shape is:
+Open **Settings → Apps → YAHEMS → Configure** (the app-level settings page). For each
+canonical signal you get a dropdown of *your* Homey devices and a second dropdown of
+that device's capabilities — no JSON, no UUIDs. Map what you own, leave the rest
+unmapped, and press **Save**. The page writes the validated map into the app's
+settings and the controller picks it up immediately (no restart).
+
+It also exposes the **"No grid meter? Run in advisory estimate"** switch (on by
+default — see [Running without a meter](#running-without-a-meter)).
+
+### JSON format (reference / advanced)
+
+Under the hood the page stores the same JSON contract `lib/hal.js` validates. You
+rarely need to see it, but the shape is:
 
 ```json
 {
@@ -83,6 +95,7 @@ and capability backs each canonical signal. The shape is:
 
 | Signal key | Matrix field | Notes |
 |------------|-------------|-------|
+| `grid_power_w` | `gridPowerW` | **Net grid power, signed** (+ import / − export) from a hybrid-inverter CT or Shelly EM. Preferred grid source — no P1 dongle needed. |
 | `home_consumption_w` | `consumptionW` | Net whole-house draw from your grid meter (W) |
 | `battery_soc_pct` | `socPct` | House battery state-of-charge 0–100 |
 | `price_level` | `priceLevel` | Tibber price level 1 (expensive) – 5 (cheap) |
@@ -127,8 +140,10 @@ safe: add signals gradually as you wire up hardware.
 | Setting | Default | Purpose |
 |---------|--------:|---------|
 | **Power target (anchor)** | 4500 W | Net import at/above which the house is at a full peak. The DEFCON bands are thirds of this value — see [DEFCON.md](DEFCON.md). Minimum 500 W (apartment owners with a realistic low peak). |
-| **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once `home_consumption_w` (or the flow action) is reliably delivering live house consumption. |
-| **Device map (JSON)** | `{"inputs":[],"control":{"house_meter_present":false}}` | Maps your Homey device IDs and capabilities to the YAHEMS canonical signals above. |
+| **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once a real grid/consumption signal (or the flow action) is reliably delivering live house power. |
+
+The **device map** and the **estimate** switch live on the App Settings page above,
+not in the per-device settings.
 
 ### Advisory → Control gate
 
@@ -138,8 +153,25 @@ safe: add signals gradually as you wire up hardware.
 | `true` | **control** | (Future) Allows `_applyDecisions()` to actuate mapped devices. |
 
 The setting checkbox takes priority over `control.house_meter_present` in the JSON
-map. Keep the checkbox off until your `home_consumption_w` signal (or the flow
-action) is producing reliable real-time data.
+map. Keep the checkbox off until your grid/consumption signal (or the flow action)
+is producing reliable real-time data.
+
+## Running without a meter
+
+YAHEMS is designed to run on a Homey with **no P1/HAN reader or energy dongle**. The
+net-power reading is taken from the first available of, in order:
+
+1. **`grid_power_w`** — a signed grid CT (hybrid inverter / Shelly EM).
+2. **`home_consumption_w`** — a mapped whole-house meter.
+3. The **Report grid power** flow action.
+4. An **advisory estimate** — a season-aware base + heat-pump load model
+   (`lib/simfeeder.js` `estimateConsumptionW`), used only when nothing real is
+   mapped and the estimate switch is on.
+
+The active source is shown live in the `yahems_source` capability. While the source
+is `estimated`, the figure is guidance only — YAHEMS **never actuates** in this state
+(it is advisory by definition until the house-meter gate is on), and staleness/
+implausibility faults are suppressed because the estimate is intentionally steady.
 
 ## Flow cards
 

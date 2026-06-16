@@ -5,6 +5,7 @@ const engine = require('../../lib/engine');
 const matrix = require('../../lib/matrix');
 const hal = require('../../lib/hal');
 const simgate = require('../../lib/simgate');
+const simfeeder = require('../../lib/simfeeder');
 
 // =============================================================================
 // ACTUATION GATE — read before changing this file
@@ -53,6 +54,7 @@ module.exports = class ControllerDevice extends Homey.Device {
   async onInit() {
     this.buffer   = [];
     this.gridW    = 0;        // fallback grid reading from flow action
+    this._gridWReported = false; // true once a Report-grid-power flow value arrives
     this._lastDefcon = null;
     this._decisions  = null;
     this._api        = null;  // HomeyAPI instance (null if unavailable)
@@ -70,8 +72,8 @@ module.exports = class ControllerDevice extends Homey.Device {
       consumptionW: { value: null, lastChangedAt: null },
     };
 
-    // Ensure required capabilities exist (including the new yahems_fault).
-    for (const c of ['yahems_defcon', 'yahems_mode', 'measure_power', 'yahems_fault']) {
+    // Ensure required capabilities exist (including yahems_source + yahems_fault).
+    for (const c of ['yahems_defcon', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_fault']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
     }
 
@@ -100,6 +102,20 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._loadDeviceMap();
     this._loadMatrix();
 
+    // The App Settings page edits the device_map at app level. React to changes
+    // immediately so the map takes effect without an app restart.
+    this._onAppSettingsSet = (key) => {
+      if (key === 'device_map' || key === 'estimate_when_no_meter') {
+        if (key === 'device_map') this._loadDeviceMap();
+        this.recompute().catch(this.error);
+      }
+    };
+    try {
+      this.homey.settings.on('set', this._onAppSettingsSet);
+    } catch (err) {
+      this.log(`could not subscribe to app settings changes: ${err.message}`);
+    }
+
     // Periodic recompute (every 60 s) plus an immediate run.
     this._interval = this.homey.setInterval(() => this.recompute().catch(this.error), 60000);
     await this.recompute();
@@ -110,14 +126,45 @@ module.exports = class ControllerDevice extends Homey.Device {
   // Settings helpers
   // ---------------------------------------------------------------------------
 
-  /** (Re)load and validate the device_map setting. Logs validation errors. */
+  /**
+   * (Re)load and validate the device_map. Logs validation errors.
+   *
+   * The map is owned by the App Settings page and stored in app-level
+   * ManagerSettings (key `device_map`). For backward compatibility a non-empty
+   * device-level `device_map` setting (the legacy textarea) is still honoured as
+   * a fallback when no app-level map exists.
+   */
   _loadDeviceMap() {
-    const raw = (this.getSettings() || {}).device_map || '';
+    let raw = '';
+    try {
+      raw = this.homey.settings.get('device_map') || '';
+    } catch (_) {
+      raw = '';
+    }
+    if (!raw) {
+      // Legacy fallback: device-level textarea (pre-settings-page installs).
+      raw = (this.getSettings() || {}).device_map || '';
+    }
     const { ok, map, errors } = hal.validateMap(raw);
     if (!ok) {
       this.log(`device_map validation errors — using empty map: ${errors.join('; ')}`);
     }
     this._deviceMap = map;
+  }
+
+  /**
+   * Whether to run the advisory consumption estimate when no real power source
+   * is available. App-level setting `estimate_when_no_meter`, default TRUE so the
+   * app gives honest guidance out of the box on a Homey with no P1/energy dongle.
+   * @returns {boolean}
+   */
+  _estimateWhenNoMeter() {
+    try {
+      const v = this.homey.settings.get('estimate_when_no_meter');
+      return v !== false; // default true (undefined/null → true)
+    } catch (_) {
+      return true;
+    }
   }
 
   /**
@@ -162,9 +209,8 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   async onSettings({ changedKeys }) {
-    if (changedKeys.includes('device_map')) {
-      this._loadDeviceMap();
-    }
+    // device_map now lives in app settings (handled by the app-settings listener
+    // in onInit); only matrix_override remains a device-level setting here.
     if (changedKeys.some((k) => k === 'matrix_override')) {
       this._loadMatrix();
     }
@@ -178,6 +224,7 @@ module.exports = class ControllerDevice extends Homey.Device {
   async onReportGrid(w) {
     if (Number.isFinite(w)) {
       this.gridW = w;
+      this._gridWReported = true; // a real flow value has arrived; outranks estimate
       await this.recompute();
     }
     return true;
@@ -361,18 +408,45 @@ module.exports = class ControllerDevice extends Homey.Device {
       }
     }
 
-    // --- Determine consumption source ---
-    // Mapped home_consumption_w takes precedence over flow-action gridW.
-    // If neither is mapped, use gridW (must be >= 0, export reads as 0).
-    const consumptionW = Number.isFinite(halSignals.consumptionW)
-      ? Math.max(0, halSignals.consumptionW)
-      : Math.max(0, this.gridW);
+    // --- Determine net-power source (precedence) ---
+    // The engine wants net grid import in watts (export reads as 0). Precedence:
+    //   1. grid_power_w  — signed inverter/Shelly CT reading (preferred meter).
+    //   2. home_consumption_w — mapped house-draw meter (P1/HAN, PbtH).
+    //   3. flow-action gridW — "Report grid power" flow input.
+    //   4. estimate    — advisory no-meter fallback (lib/simfeeder), if enabled.
+    // Each real source clamps to >= 0. Only when NOTHING real is available do we
+    // fall back to the estimate, so a fake zero is never reported as surplus.
+    let consumptionW;
+    let sourceTag;
+    if (Number.isFinite(halSignals.gridPowerW)) {
+      consumptionW = Math.max(0, halSignals.gridPowerW);
+      sourceTag = 'grid_ct';
+    } else if (Number.isFinite(halSignals.consumptionW)) {
+      consumptionW = Math.max(0, halSignals.consumptionW);
+      sourceTag = 'measured';
+    } else if (this._gridWReported === true) {
+      consumptionW = Math.max(0, this.gridW);
+      sourceTag = 'flow';
+    } else if (this._estimateWhenNoMeter()) {
+      consumptionW = simfeeder.estimateConsumptionW({});
+      sourceTag = 'estimated';
+    } else {
+      // No source and estimate disabled: hold neutral (DEFCON 3 via fault path
+      // is overkill; use 0 but tag as estimated-off so the UI is honest).
+      consumptionW = 0;
+      sourceTag = 'estimated';
+    }
+
+    // Fault detection only applies to REAL sensor sources. The advisory estimate
+    // is intentionally steady (and model-bounded), so it can neither go stale nor
+    // read implausibly high — skip both checks for it.
+    const isRealSource = sourceTag !== 'estimated';
 
     // --- Implausible-reading check ---
     // Values above MAX_PLAUSIBLE_W indicate a spoofed or broken meter.
     // Treat as a fault: clamp the value fed to the buffer so it can recover
     // quickly once real values return, but force DEFCON 3 regardless.
-    const isImplausible = consumptionW > MAX_PLAUSIBLE_W;
+    const isImplausible = isRealSource && consumptionW > MAX_PLAUSIBLE_W;
     const consumptionWClamped = isImplausible ? MAX_PLAUSIBLE_W : consumptionW;
 
     // --- Staleness detection on consumptionW ---
@@ -380,7 +454,9 @@ module.exports = class ControllerDevice extends Homey.Device {
     // feed does not prevent stale detection from also firing later.
     // Was this signal in fault BEFORE checking this cycle (to detect transitions)?
     const wasFault = this.getCapabilityValue('yahems_fault') === true;
-    const isStaleNow = this._checkStaleness('consumptionW', consumptionWClamped);
+    const isStaleNow = isRealSource
+      ? this._checkStaleness('consumptionW', consumptionWClamped)
+      : false;
 
     // Combined fault condition: stale OR implausible.
     const isFault = isStaleNow || isImplausible;
@@ -426,6 +502,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     // Update capabilities (own-capability writes — not actuation).
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);
     await this.setCapabilityValue('yahems_mode',   mode).catch(this.error);
+    await this.setCapabilityValue('yahems_source', sourceTag).catch(this.error);
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
     await this.setCapabilityValue('yahems_fault',  isFault).catch(this.error);
 
@@ -455,7 +532,7 @@ module.exports = class ControllerDevice extends Homey.Device {
         : ' FAULT:stale')
       : '';
     this.log(
-      `[${mode}] D${defcon}${faultTag}${boostTag} | ev=${this._decisions.ev.amp}A `
+      `[${mode}] D${defcon} src=${sourceTag}${faultTag}${boostTag} | ev=${this._decisions.ev.amp}A `
       + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
       + `appl=${this._decisions.appliances.action}`,
@@ -538,6 +615,9 @@ module.exports = class ControllerDevice extends Homey.Device {
 
   async onDeleted() {
     if (this._interval) this.homey.clearInterval(this._interval);
+    if (this._onAppSettingsSet) {
+      try { this.homey.settings.removeListener('set', this._onAppSettingsSet); } catch (_) { /* noop */ }
+    }
   }
 
 };

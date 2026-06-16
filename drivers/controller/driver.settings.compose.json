@@ -16,13 +16,6 @@
     "value": false
   },
   {
-    "id": "device_map",
-    "type": "textarea",
-    "label": { "en": "Device map (JSON)", "sv": "Enhetskarta (JSON)" },
-    "hint": { "en": "Maps your physical Homey devices to YAHEMS canonical signals. Each entry needs a signal key, a Homey device ID, and a capability ID. Leave empty to run on flow-action input only.", "sv": "Kopplar dina fysiska Homey-enheter till YAHEMS kanoniska signaler. Varje rad kräver en signalnyckel, ett Homey-enhets-ID och ett förmåge-ID. Lämna tomt för att köra enbart på flödesåtgärdsdata." },
-    "value": "{\"inputs\":[],\"control\":{\"house_meter_present\":false}}"
-  },
-  {
     "id": "matrix_override",
     "type": "textarea",
     "label": { "en": "Matrix setpoint overrides (JSON)", "sv": "Matrisens börvärden (JSON)" },

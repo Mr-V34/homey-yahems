@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YAHEMS — Device Mapping</title>
+  <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #222; margin: 0; padding: 16px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    p.lede { color: #666; font-size: 13px; margin: 0 0 16px; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .row .label { font-weight: 600; font-size: 13px; }
+    .row .note { color: #888; font-size: 11px; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
+    select, input { font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+    input.threshold { width: 90px; }
+    .threshold-wrap { display: none; }
+    .threshold-wrap.show { display: block; }
+    .estimate { margin: 16px 0; padding: 12px; background: #fafafa; border: 1px solid #eee; border-radius: 8px; font-size: 13px; }
+    .estimate label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    .actions { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
+    button { font-size: 14px; padding: 8px 16px; border: none; border-radius: 8px; background: #F2600C; color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { font-size: 12px; color: #666; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1 id="title">YAHEMS — Device Mapping</h1>
+  <p class="lede" id="lede">Map your physical Homey devices to the signals YAHEMS uses. Leave a row unmapped to estimate that signal.</p>
+
+  <div id="rows"></div>
+
+  <div class="estimate">
+    <label>
+      <input type="checkbox" id="estimate" />
+      <span id="estimate-label">No grid meter? Run in advisory estimate (recommended — gives guidance with no P1/energy dongle).</span>
+    </label>
+  </div>
+
+  <div class="actions">
+    <button id="save" disabled>Save mapping</button>
+    <span id="status"></span>
+  </div>
+
+  <script type="text/javascript">
+    // Self-contained bilingual chrome (sv/en) — no locale-file coupling for the
+    // settings page. Signal labels come from the catalogue (which carries both).
+    var SV = (navigator.language || 'en').toLowerCase().indexOf('sv') === 0;
+    function t(en, sv) { return SV ? sv : en; }
+
+    var DEVICES = [];   // [{id,name,zone,capabilities:[{id,title,type}]}]
+    var SIGNALS = [];   // catalogue
+    var existingMap = { inputs: [], control: { house_meter_present: false } };
+
+    function onHomeyReady(Homey) {
+      // Localise static chrome.
+      document.getElementById('title').textContent = t('YAHEMS — Device Mapping', 'YAHEMS — Enhetskoppling');
+      document.getElementById('lede').textContent = t(
+        'Map your physical Homey devices to the signals YAHEMS uses. Leave a row unmapped to estimate that signal.',
+        'Koppla dina fysiska Homey-enheter till signalerna YAHEMS använder. Lämna en rad okopplad för att uppskatta den signalen.');
+      document.getElementById('estimate-label').textContent = t(
+        'No grid meter? Run in advisory estimate (recommended — works with no P1/energy dongle).',
+        'Ingen elmätare? Kör i rådgivande uppskattning (rekommenderas — fungerar utan P1/energidongel).');
+      document.getElementById('save').textContent = t('Save mapping', 'Spara koppling');
+
+      Promise.all([apiGet(Homey, '/getSignals'), apiGet(Homey, '/getDevices'), get(Homey, 'device_map'), get(Homey, 'estimate_when_no_meter')])
+        .then(function (res) {
+          SIGNALS = res[0] || [];
+          DEVICES = res[1] || [];
+          existingMap = parseMap(res[2]);
+          document.getElementById('estimate').checked = (res[3] !== false);
+          render();
+          document.getElementById('save').disabled = false;
+          bindSave(Homey);
+          Homey.ready();
+        })
+        .catch(function (err) {
+          setStatus(t('Failed to load: ', 'Kunde inte ladda: ') + err);
+          Homey.ready();
+        });
+    }
+
+    function apiGet(Homey, path) {
+      return new Promise(function (resolve, reject) {
+        Homey.api('GET', path, null, function (err, result) { err ? reject(err) : resolve(result); });
+      });
+    }
+    function get(Homey, key) {
+      return new Promise(function (resolve, reject) {
+        Homey.get(key, function (err, value) { err ? reject(err) : resolve(value); });
+      });
+    }
+    function set(Homey, key, value) {
+      return new Promise(function (resolve, reject) {
+        Homey.set(key, value, function (err) { err ? reject(err) : resolve(); });
+      });
+    }
+
+    function parseMap(raw) {
+      var fallback = { inputs: [], control: { house_meter_present: false } };
+      if (!raw) return fallback;
+      try {
+        var m = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+        if (!m || !Array.isArray(m.inputs)) return fallback;
+        if (!m.control || typeof m.control !== 'object') m.control = { house_meter_present: false };
+        return m;
+      } catch (e) { return fallback; }
+    }
+
+    function existingFor(signalKey) {
+      for (var i = 0; i < existingMap.inputs.length; i++) {
+        if (existingMap.inputs[i].signal === signalKey) return existingMap.inputs[i];
+      }
+      return null;
+    }
+
+    function deviceById(id) {
+      for (var i = 0; i < DEVICES.length; i++) if (DEVICES[i].id === id) return DEVICES[i];
+      return null;
+    }
+
+    function render() {
+      var container = document.getElementById('rows');
+      container.innerHTML = '';
+      SIGNALS.forEach(function (sig) {
+        var prev = existingFor(sig.key);
+        var row = document.createElement('div');
+        row.className = 'row';
+        row.dataset.signal = sig.key;
+        row.dataset.kind = sig.kind;
+
+        var label = document.createElement('div');
+        label.className = 'label';
+        label.textContent = SV ? sig.labelSv : sig.labelEn;
+        row.appendChild(label);
+
+        if (sig.note) {
+          var note = document.createElement('div');
+          note.className = 'note';
+          note.textContent = sig.note;
+          row.appendChild(note);
+        }
+
+        var controls = document.createElement('div');
+        controls.className = 'controls';
+
+        // Device select
+        var devSel = document.createElement('select');
+        devSel.className = 'device';
+        devSel.appendChild(opt('', t('— not mapped —', '— ej kopplad —')));
+        DEVICES.forEach(function (d) {
+          devSel.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
+        });
+        if (prev) devSel.value = prev.deviceId;
+
+        // Capability select
+        var capSel = document.createElement('select');
+        capSel.className = 'cap';
+
+        // Threshold (boolean signals only)
+        var threshWrap = document.createElement('div');
+        threshWrap.className = 'threshold-wrap' + (sig.kind === 'boolean' ? ' show' : '');
+        var thresh = document.createElement('input');
+        thresh.className = 'threshold';
+        thresh.type = 'number';
+        thresh.placeholder = t('active > (W)', 'aktiv > (W)');
+        if (prev && prev.activeAbove != null) thresh.value = prev.activeAbove;
+        threshWrap.appendChild(thresh);
+
+        function fillCaps() {
+          capSel.innerHTML = '';
+          capSel.appendChild(opt('', t('— capability —', '— förmåga —')));
+          var dev = deviceById(devSel.value);
+          if (dev) {
+            dev.capabilities.forEach(function (c) {
+              capSel.appendChild(opt(c.id, c.title + ' (' + c.id + ')'));
+            });
+            // Preselect: existing mapping, else first suggested capability present.
+            if (prev && prev.capability) {
+              capSel.value = prev.capability;
+            } else if (sig.suggestCaps && sig.suggestCaps.length) {
+              for (var i = 0; i < sig.suggestCaps.length; i++) {
+                if (dev.capabilities.some(function (c) { return c.id === sig.suggestCaps[i]; })) {
+                  capSel.value = sig.suggestCaps[i];
+                  break;
+                }
+              }
+            }
+          }
+        }
+        devSel.addEventListener('change', fillCaps);
+        fillCaps();
+
+        controls.appendChild(devSel);
+        controls.appendChild(capSel);
+        controls.appendChild(threshWrap);
+        row.appendChild(controls);
+        container.appendChild(row);
+      });
+    }
+
+    function opt(value, text) {
+      var o = document.createElement('option');
+      o.value = value; o.textContent = text;
+      return o;
+    }
+
+    function collect() {
+      var inputs = [];
+      var rows = document.querySelectorAll('#rows .row');
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var dev = row.querySelector('.device').value;
+        var cap = row.querySelector('.cap').value;
+        if (!dev || !cap) continue;
+        var entry = { signal: row.dataset.signal, deviceId: dev, capability: cap };
+        var threshEl = row.querySelector('.threshold');
+        if (threshEl && threshEl.value !== '' && isFinite(Number(threshEl.value))) {
+          entry.activeAbove = Number(threshEl.value);
+        }
+        inputs.push(entry);
+      }
+      var control = (existingMap && existingMap.control) ? existingMap.control : { house_meter_present: false };
+      return { inputs: inputs, control: control };
+    }
+
+    function bindSave(Homey) {
+      document.getElementById('save').addEventListener('click', function () {
+        var btn = this;
+        btn.disabled = true;
+        setStatus(t('Saving…', 'Sparar…'));
+        var map = collect();
+        Promise.all([
+          set(Homey, 'device_map', JSON.stringify(map)),
+          set(Homey, 'estimate_when_no_meter', document.getElementById('estimate').checked),
+        ]).then(function () {
+          existingMap = map;
+          setStatus(t('Saved ✓ (' + map.inputs.length + ' mapped)', 'Sparat ✓ (' + map.inputs.length + ' kopplade)'));
+          btn.disabled = false;
+        }).catch(function (err) {
+          setStatus(t('Save failed: ', 'Kunde inte spara: ') + err);
+          btn.disabled = false;
+        });
+      });
+    }
+
+    function setStatus(msg) { document.getElementById('status').textContent = msg; }
+  </script>
+</body>
+</html>

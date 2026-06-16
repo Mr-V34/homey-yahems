@@ -21,17 +21,20 @@
       "battery",
       "solar",
       "ev charging",
-      "peak",
-      "defcon",
-      "tariff"
+      "peak shaving",
+      "spot price",
+      "tariff",
+      "defcon"
     ],
     "sv": [
       "energi",
       "batteri",
-      "sol",
-      "elbil",
-      "effekt",
-      "tariff"
+      "solceller",
+      "elbilsladdning",
+      "effekttoppar",
+      "spotpris",
+      "tariff",
+      "defcon"
     ]
   },
   "category": "energy",
@@ -539,6 +542,7 @@
       "capabilities": [
         "yahems_defcon",
         "yahems_mode",
+        "yahems_source",
         "measure_power",
         "yahems_fault"
       ],
@@ -593,19 +597,6 @@
             "sv": "Växlar från Rådgivande till Styrning. Håll av tills YAHEMS ser verklig husförbrukning."
           },
           "value": false
-        },
-        {
-          "id": "device_map",
-          "type": "textarea",
-          "label": {
-            "en": "Device map (JSON)",
-            "sv": "Enhetskarta (JSON)"
-          },
-          "hint": {
-            "en": "Maps your physical Homey devices to YAHEMS canonical signals. Each entry needs a signal key, a Homey device ID, and a capability ID. Leave empty to run on flow-action input only.",
-            "sv": "Kopplar dina fysiska Homey-enheter till YAHEMS kanoniska signaler. Varje rad kräver en signalnyckel, ett Homey-enhets-ID och ett förmåge-ID. Lämna tomt för att köra enbart på flödesåtgärdsdata."
-          },
-          "value": "{\"inputs\":[],\"control\":{\"house_meter_present\":false}}"
         },
         {
           "id": "matrix_override",
@@ -683,6 +674,51 @@
           "title": {
             "en": "Control",
             "sv": "Styrning"
+          }
+        }
+      ]
+    },
+    "yahems_source": {
+      "type": "enum",
+      "title": {
+        "en": "Input source",
+        "sv": "Indatakälla"
+      },
+      "desc": {
+        "en": "Where the net power reading comes from. 'Estimated' means no meter is mapped yet — guidance only.",
+        "sv": "Varifrån näteffekten kommer. 'Uppskattad' betyder att ingen mätare är kopplad än — endast vägledning."
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": false,
+      "values": [
+        {
+          "id": "measured",
+          "title": {
+            "en": "Measured (house meter)",
+            "sv": "Uppmätt (husmätare)"
+          }
+        },
+        {
+          "id": "grid_ct",
+          "title": {
+            "en": "Grid CT / inverter",
+            "sv": "Nät-CT / växelriktare"
+          }
+        },
+        {
+          "id": "flow",
+          "title": {
+            "en": "Flow action",
+            "sv": "Flödesåtgärd"
+          }
+        },
+        {
+          "id": "estimated",
+          "title": {
+            "en": "Estimated (no meter)",
+            "sv": "Uppskattad (ingen mätare)"
           }
         }
       ]

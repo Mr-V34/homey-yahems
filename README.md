@@ -64,9 +64,10 @@ test/selftest.js   auto-discovers and runs every lib/*.js selfTest()
 
 ## Roadmap
 
-Direct device reads via homey-api, price + solar-forecast prediction, the settings
-UI for the placeholder map, and wiring the actuation gate so the matrix actually
-drives devices once a real house meter is present. Final app icon and store
+Direct device reads via homey-api ✓ and a friendly App Settings device-map builder ✓
+(with a no-meter advisory estimate so it runs without a P1/energy dongle). Next:
+price + solar-forecast prediction, and wiring the actuation gate so the matrix
+actually drives devices once a real house meter is present. Final app icon and store
 imagery still to be designed to App Store spec.
 
 Author: Peter Persson · Co-author: B.Frank

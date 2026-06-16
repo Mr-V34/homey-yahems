@@ -1,0 +1,15 @@
+{
+  "type": "enum",
+  "title": { "en": "Input source", "sv": "Indatakälla" },
+  "desc": { "en": "Where the net power reading comes from. 'Estimated' means no meter is mapped yet — guidance only.", "sv": "Varifrån näteffekten kommer. 'Uppskattad' betyder att ingen mätare är kopplad än — endast vägledning." },
+  "getable": true,
+  "setable": false,
+  "uiComponent": "sensor",
+  "insights": false,
+  "values": [
+    { "id": "measured", "title": { "en": "Measured (house meter)", "sv": "Uppmätt (husmätare)" } },
+    { "id": "grid_ct", "title": { "en": "Grid CT / inverter", "sv": "Nät-CT / växelriktare" } },
+    { "id": "flow", "title": { "en": "Flow action", "sv": "Flödesåtgärd" } },
+    { "id": "estimated", "title": { "en": "Estimated (no meter)", "sv": "Uppskattad (ingen mätare)" } }
+  ]
+}
