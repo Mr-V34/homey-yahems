@@ -38,5 +38,11 @@
   "source": "https://github.com/Mr-V34/homey-yahems",
   "homepage": "https://www.v34.com",
   "support": "mailto:info@v34.com",
-  "permissions": ["homey:manager:api"]
+  "permissions": ["homey:manager:api"],
+  "api": {
+    "getDevices": { "method": "get", "path": "/devices" },
+    "getSignals": { "method": "get", "path": "/signals" },
+    "getLevels": { "method": "get", "path": "/levels" },
+    "getCatalog": { "method": "get", "path": "/catalog" }
+  }
 }

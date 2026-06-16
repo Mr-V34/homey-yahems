@@ -3,250 +3,429 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>YAHEMS — Device Mapping</title>
+  <title>YAHEMS</title>
   <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #222; margin: 0; padding: 16px; }
     h1 { font-size: 18px; margin: 0 0 4px; }
-    p.lede { color: #666; font-size: 13px; margin: 0 0 16px; }
-    .row { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 10px 0; border-bottom: 1px solid #eee; }
+    h2 { font-size: 14px; margin: 22px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+    h3 { font-size: 13px; margin: 12px 0 6px; color: #444; }
+    p.lede { color: #666; font-size: 13px; margin: 0 0 8px; }
+    .card { background: #fafafa; border: 1px solid #eee; border-radius: 10px; padding: 14px; margin-bottom: 6px; }
+    .limit-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .limit-row label { font-size: 13px; min-width: 150px; }
+    input[type="number"], select { font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+    input.big { font-size: 18px; font-weight: 600; width: 120px; text-align: right; }
+    .hint { color: #888; font-size: 12px; margin-top: 2px; }
+    .row { padding: 9px 0; border-bottom: 1px solid #eee; }
+    .row:last-child { border-bottom: none; }
     .row .label { font-weight: 600; font-size: 13px; }
-    .row .note { color: #888; font-size: 11px; }
-    .controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
-    select, input { font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
-    input.threshold { width: 90px; }
-    .threshold-wrap { display: none; }
-    .threshold-wrap.show { display: block; }
-    .estimate { margin: 16px 0; padding: 12px; background: #fafafa; border: 1px solid #eee; border-radius: 8px; font-size: 13px; }
-    .estimate label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
-    .actions { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
-    button { font-size: 14px; padding: 8px 16px; border: none; border-radius: 8px; background: #F2600C; color: #fff; cursor: pointer; }
+    .row .note { color: #999; font-size: 11px; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; margin-top: 4px; }
+    .subfns { margin: 6px 0 2px 8px; display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
+    .subfns .fn { font-size: 12px; color: #555; }
+    .toggle { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 13px; }
+    table.levels { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.levels th, table.levels td { padding: 5px 3px; text-align: center; border-bottom: 1px solid #eee; }
+    table.levels th.dev, table.levels td.dev { text-align: left; font-weight: 600; white-space: nowrap; }
+    table.levels thead th { border-radius: 4px; }
+    .d5 { background: #1565C0; color: #fff; } .d4 { background: #2E7D32; color: #fff; }
+    .d3 { background: #F4B400; color: #222; } .d2 { background: #D32F2F; color: #fff; }
+    .d1 { background: #FFFFFF; color: #222; border: 1px solid #bbb; }
+    table.levels td input, table.levels td select { width: 58px; font-size: 12px; padding: 3px; text-align: center; }
+    .custom-item { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .smallbtn { font-size: 12px; padding: 5px 10px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; color: #333; }
+    .actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; position: sticky; bottom: 0; background: #fff; padding: 10px 0; }
+    button.save { font-size: 14px; padding: 9px 18px; border: none; border-radius: 8px; background: #F2600C; color: #fff; cursor: pointer; }
     button:disabled { opacity: 0.5; cursor: default; }
     #status { font-size: 12px; color: #666; }
-    .hidden { display: none; }
   </style>
 </head>
 <body>
-  <h1 id="title">YAHEMS — Device Mapping</h1>
-  <p class="lede" id="lede">Map your physical Homey devices to the signals YAHEMS uses. Leave a row unmapped to estimate that signal.</p>
+  <h1>YAHEMS</h1>
+  <p class="lede" id="lede"></p>
 
-  <div id="rows"></div>
+  <h2 id="h-limits"></h2>
+  <div class="card">
+    <div class="limit-row">
+      <label id="l-max"></label>
+      <input type="number" id="anchor" class="big" min="500" max="30000" step="100" /> <span>W</span>
+    </div>
+    <div class="limit-row">
+      <label id="l-fuse"></label>
+      <select id="fuse"></select> <span>A</span>
+      <label id="l-phases" style="min-width:auto;margin-left:10px;"></label>
+      <select id="phases"></select>
+    </div>
+    <div class="hint" id="limits-hint"></div>
+  </div>
 
-  <div class="estimate">
-    <label>
-      <input type="checkbox" id="estimate" />
-      <span id="estimate-label">No grid meter? Run in advisory estimate (recommended — gives guidance with no P1/energy dongle).</span>
-    </label>
+  <h2 id="h-inputs"></h2>
+  <div class="card"><div id="inputs"></div></div>
+
+  <div class="card">
+    <label class="toggle"><input type="checkbox" id="estimate" /> <span id="estimate-label"></span></label>
+  </div>
+
+  <h2 id="h-devices"></h2>
+  <div id="devices"></div>
+
+  <h2 id="h-custom"></h2>
+  <div class="card">
+    <div id="custom"></div>
+    <button class="smallbtn" id="add-custom"></button>
+  </div>
+
+  <h2 id="h-levels"></h2>
+  <div class="card">
+    <p class="lede" id="levels-lede"></p>
+    <table class="levels"><thead id="levels-head"></thead><tbody id="levels-body"></tbody></table>
   </div>
 
   <div class="actions">
-    <button id="save" disabled>Save mapping</button>
+    <button class="save" id="save" disabled></button>
     <span id="status"></span>
   </div>
 
   <script type="text/javascript">
-    // Self-contained bilingual chrome (sv/en) — no locale-file coupling for the
-    // settings page. Signal labels come from the catalogue (which carries both).
     var SV = (navigator.language || 'en').toLowerCase().indexOf('sv') === 0;
     function t(en, sv) { return SV ? sv : en; }
+    function L(o) { return SV ? (o.labelSv || o.labelEn) : o.labelEn; }
 
-    var DEVICES = [];   // [{id,name,zone,capabilities:[{id,title,type}]}]
-    var SIGNALS = [];   // catalogue
-    var existingMap = { inputs: [], control: { house_meter_present: false } };
+    var DEVICES = [], SIGNALS = [], CATALOG = [], LEVELS = null;
+    var existingMap = { inputs: [], control: { house_meter_present: false }, controls: {}, custom: [] };
+    var ownedSignals = {};   // signalKeys owned by a catalog function (excluded from Inputs)
+    var customCounter = 0;
+    var FUSES = [16, 20, 25, 35, 50, 63];
 
     function onHomeyReady(Homey) {
-      // Localise static chrome.
-      document.getElementById('title').textContent = t('YAHEMS — Device Mapping', 'YAHEMS — Enhetskoppling');
       document.getElementById('lede').textContent = t(
-        'Map your physical Homey devices to the signals YAHEMS uses. Leave a row unmapped to estimate that signal.',
-        'Koppla dina fysiska Homey-enheter till signalerna YAHEMS använder. Lämna en rad okopplad för att uppskatta den signalen.');
+        'Place your devices, set your limits, and tune what YAHEMS does at each level.',
+        'Placera dina enheter, sätt dina gränser och justera vad YAHEMS gör på varje nivå.');
+      document.getElementById('h-limits').textContent = t('Limits', 'Gränser');
+      document.getElementById('l-max').textContent = t('Power limit (max)', 'Effektgräns (max)');
+      document.getElementById('l-fuse').textContent = t('Main fuse', 'Huvudsäkring');
+      document.getElementById('l-phases').textContent = t('Phases', 'Faser');
+      document.getElementById('limits-hint').textContent = t(
+        'Import at/above the power limit is DEFCON 1. The main fuse caps EV charging current.',
+        'Import på/över effektgränsen är DEFCON 1. Huvudsäkringen begränsar elbilens laddström.');
+      document.getElementById('h-inputs').textContent = t('Inputs (sensors)', 'Insignaler (sensorer)');
       document.getElementById('estimate-label').textContent = t(
-        'No grid meter? Run in advisory estimate (recommended — works with no P1/energy dongle).',
-        'Ingen elmätare? Kör i rådgivande uppskattning (rekommenderas — fungerar utan P1/energidongel).');
-      document.getElementById('save').textContent = t('Save mapping', 'Spara koppling');
+        'No grid meter? Run in advisory estimate (works with no P1/energy dongle).',
+        'Ingen elmätare? Kör i rådgivande uppskattning (fungerar utan P1/energidongel).');
+      document.getElementById('h-devices').textContent = t('Your devices', 'Dina enheter');
+      document.getElementById('h-custom').textContent = t('Your own consumers', 'Egna förbrukare');
+      document.getElementById('add-custom').textContent = t('+ Add consumer', '+ Lägg till förbrukare');
+      document.getElementById('h-levels').textContent = t('How YAHEMS controls each level', 'Så styr YAHEMS varje nivå');
+      document.getElementById('levels-lede').textContent = t(
+        'Edit the setpoints (5 = surplus … 1 = critical). Contradictory edits are auto-corrected to the last safe values.',
+        'Ändra börvärden (5 = överskott … 1 = kritisk). Motstridiga ändringar rättas automatiskt till senaste säkra värden.');
+      document.getElementById('save').textContent = t('Save', 'Spara');
 
-      Promise.all([apiGet(Homey, '/getSignals'), apiGet(Homey, '/getDevices'), get(Homey, 'device_map'), get(Homey, 'estimate_when_no_meter')])
-        .then(function (res) {
-          SIGNALS = res[0] || [];
-          DEVICES = res[1] || [];
-          existingMap = parseMap(res[2]);
-          document.getElementById('estimate').checked = (res[3] !== false);
-          render();
-          document.getElementById('save').disabled = false;
-          bindSave(Homey);
-          Homey.ready();
-        })
-        .catch(function (err) {
-          setStatus(t('Failed to load: ', 'Kunde inte ladda: ') + err);
-          Homey.ready();
-        });
+      Promise.all([
+        apiGet(Homey, '/signals'), apiGet(Homey, '/devices'), apiGet(Homey, '/catalog'), apiGet(Homey, '/levels'),
+        get(Homey, 'device_map'), get(Homey, 'estimate_when_no_meter'),
+        get(Homey, 'anchor'), get(Homey, 'main_fuse_a'), get(Homey, 'phases'),
+      ]).then(function (r) {
+        SIGNALS = r[0] || []; DEVICES = r[1] || []; CATALOG = r[2] || []; LEVELS = r[3] || null;
+        existingMap = parseMap(r[4]);
+        document.getElementById('estimate').checked = (r[5] !== false);
+        document.getElementById('anchor').value = numOr(r[6], 4500);
+        buildFuse(numOr(r[7], 25), numOr(r[8], 3));
+        computeOwned();
+        renderInputs(); renderDevices(); renderCustom(); renderLevels();
+        document.getElementById('add-custom').addEventListener('click', function () { addCustomRow({}); });
+        document.getElementById('save').disabled = false;
+        bindSave(Homey);
+        Homey.ready();
+      }).catch(function (err) { setStatus(t('Failed to load: ', 'Kunde inte ladda: ') + err); Homey.ready(); });
     }
 
-    function apiGet(Homey, path) {
-      return new Promise(function (resolve, reject) {
-        Homey.api('GET', path, null, function (err, result) { err ? reject(err) : resolve(result); });
-      });
-    }
-    function get(Homey, key) {
-      return new Promise(function (resolve, reject) {
-        Homey.get(key, function (err, value) { err ? reject(err) : resolve(value); });
-      });
-    }
-    function set(Homey, key, value) {
-      return new Promise(function (resolve, reject) {
-        Homey.set(key, value, function (err) { err ? reject(err) : resolve(); });
-      });
-    }
+    function apiGet(Homey, p) { return new Promise(function (res, rej) { Homey.api('GET', p, null, function (e, r) { e ? rej(e) : res(r); }); }); }
+    function get(Homey, k) { return new Promise(function (res, rej) { Homey.get(k, function (e, v) { e ? rej(e) : res(v); }); }); }
+    function set(Homey, k, v) { return new Promise(function (res, rej) { Homey.set(k, v, function (e) { e ? rej(e) : res(); }); }); }
+    function numOr(v, d) { return (v != null && isFinite(v)) ? v : d; }
+    function baseCap(id) { return String(id).split('.')[0]; }
+    function deviceById(id) { for (var i = 0; i < DEVICES.length; i++) if (DEVICES[i].id === id) return DEVICES[i]; return null; }
+    function opt(v, txt) { var o = document.createElement('option'); o.value = v; o.textContent = txt; return o; }
+    function setStatus(m) { document.getElementById('status').textContent = m; }
 
     function parseMap(raw) {
-      var fallback = { inputs: [], control: { house_meter_present: false } };
-      if (!raw) return fallback;
+      var fb = { inputs: [], control: { house_meter_present: false }, controls: {}, custom: [] };
+      if (!raw) return fb;
       try {
         var m = (typeof raw === 'string') ? JSON.parse(raw) : raw;
-        if (!m || !Array.isArray(m.inputs)) return fallback;
+        if (!m || typeof m !== 'object') return fb;
+        if (!Array.isArray(m.inputs)) m.inputs = [];
         if (!m.control || typeof m.control !== 'object') m.control = { house_meter_present: false };
+        if (!m.controls || typeof m.controls !== 'object') m.controls = {};
+        if (!Array.isArray(m.custom)) m.custom = [];
         return m;
-      } catch (e) { return fallback; }
+      } catch (e) { return fb; }
     }
 
-    function existingFor(signalKey) {
-      for (var i = 0; i < existingMap.inputs.length; i++) {
-        if (existingMap.inputs[i].signal === signalKey) return existingMap.inputs[i];
-      }
-      return null;
-    }
-
-    function deviceById(id) {
-      for (var i = 0; i < DEVICES.length; i++) if (DEVICES[i].id === id) return DEVICES[i];
-      return null;
-    }
-
-    function render() {
-      var container = document.getElementById('rows');
-      container.innerHTML = '';
-      SIGNALS.forEach(function (sig) {
-        var prev = existingFor(sig.key);
-        var row = document.createElement('div');
-        row.className = 'row';
-        row.dataset.signal = sig.key;
-        row.dataset.kind = sig.kind;
-
-        var label = document.createElement('div');
-        label.className = 'label';
-        label.textContent = SV ? sig.labelSv : sig.labelEn;
-        row.appendChild(label);
-
-        if (sig.note) {
-          var note = document.createElement('div');
-          note.className = 'note';
-          note.textContent = sig.note;
-          row.appendChild(note);
-        }
-
-        var controls = document.createElement('div');
-        controls.className = 'controls';
-
-        // Device select
-        var devSel = document.createElement('select');
-        devSel.className = 'device';
-        devSel.appendChild(opt('', t('— not mapped —', '— ej kopplad —')));
-        DEVICES.forEach(function (d) {
-          devSel.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
+    function computeOwned() {
+      ownedSignals = {};
+      CATALOG.forEach(function (g) {
+        g.subgroups.forEach(function (sg) {
+          (sg.functions || []).forEach(function (fn) { if (fn.signalKey) ownedSignals[fn.signalKey] = true; });
         });
-        if (prev) devSel.value = prev.deviceId;
-
-        // Capability select
-        var capSel = document.createElement('select');
-        capSel.className = 'cap';
-
-        // Threshold (boolean signals only)
-        var threshWrap = document.createElement('div');
-        threshWrap.className = 'threshold-wrap' + (sig.kind === 'boolean' ? ' show' : '');
-        var thresh = document.createElement('input');
-        thresh.className = 'threshold';
-        thresh.type = 'number';
-        thresh.placeholder = t('active > (W)', 'aktiv > (W)');
-        if (prev && prev.activeAbove != null) thresh.value = prev.activeAbove;
-        threshWrap.appendChild(thresh);
-
-        function fillCaps() {
-          capSel.innerHTML = '';
-          capSel.appendChild(opt('', t('— capability —', '— förmåga —')));
-          var dev = deviceById(devSel.value);
-          if (dev) {
-            dev.capabilities.forEach(function (c) {
-              capSel.appendChild(opt(c.id, c.title + ' (' + c.id + ')'));
-            });
-            // Preselect: existing mapping, else first suggested capability present.
-            if (prev && prev.capability) {
-              capSel.value = prev.capability;
-            } else if (sig.suggestCaps && sig.suggestCaps.length) {
-              for (var i = 0; i < sig.suggestCaps.length; i++) {
-                if (dev.capabilities.some(function (c) { return c.id === sig.suggestCaps[i]; })) {
-                  capSel.value = sig.suggestCaps[i];
-                  break;
-                }
-              }
-            }
-          }
-        }
-        devSel.addEventListener('change', fillCaps);
-        fillCaps();
-
-        controls.appendChild(devSel);
-        controls.appendChild(capSel);
-        controls.appendChild(threshWrap);
-        row.appendChild(controls);
-        container.appendChild(row);
       });
     }
 
-    function opt(value, text) {
-      var o = document.createElement('option');
-      o.value = value; o.textContent = text;
-      return o;
+    function buildFuse(fuseVal, phasesVal) {
+      var f = document.getElementById('fuse'); f.innerHTML = '';
+      FUSES.forEach(function (a) { f.appendChild(opt(a, a)); });
+      f.value = FUSES.indexOf(fuseVal) !== -1 ? fuseVal : 25;
+      var p = document.getElementById('phases'); p.innerHTML = '';
+      [1, 3].forEach(function (n) { p.appendChild(opt(n, n)); });
+      p.value = (phasesVal === 1 || phasesVal === 3) ? phasesVal : 3;
     }
 
-    function collect() {
-      var inputs = [];
-      var rows = document.querySelectorAll('#rows .row');
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        var dev = row.querySelector('.device').value;
-        var cap = row.querySelector('.cap').value;
-        if (!dev || !cap) continue;
-        var entry = { signal: row.dataset.signal, deviceId: dev, capability: cap };
-        var threshEl = row.querySelector('.threshold');
-        if (threshEl && threshEl.value !== '' && isFinite(Number(threshEl.value))) {
-          entry.activeAbove = Number(threshEl.value);
+    function deviceHasCap(dev, caps) {
+      if (!caps || !caps.length) return false;
+      for (var i = 0; i < dev.capabilities.length; i++) if (caps.indexOf(baseCap(dev.capabilities[i].id)) !== -1) return true;
+      return false;
+    }
+    function relevantDevices(filterCaps, filterClasses, keepId) {
+      return DEVICES.filter(function (d) {
+        if (d.id === keepId) return true;
+        if (filterClasses && filterClasses.indexOf(d.class) !== -1) return true;
+        return deviceHasCap(d, filterCaps);
+      });
+    }
+    function capSelectFor(dev, preCap, suggest) {
+      var s = document.createElement('select');
+      s.appendChild(opt('', t('— capability —', '— förmåga —')));
+      if (dev) {
+        dev.capabilities.forEach(function (c) { s.appendChild(opt(c.id, c.title + ' (' + c.id + ')')); });
+        if (preCap) s.value = preCap;
+        else if (suggest) {
+          for (var i = 0; i < suggest.length; i++) {
+            var m = dev.capabilities.filter(function (c) { return baseCap(c.id) === suggest[i]; })[0];
+            if (m) { s.value = m.id; break; }
+          }
         }
-        inputs.push(entry);
       }
-      var control = (existingMap && existingMap.control) ? existingMap.control : { house_meter_present: false };
-      return { inputs: inputs, control: control };
+      return s;
     }
 
+    // ---- Inputs section (pure signals not owned by a controlled device) ----
+    function existingInput(key) {
+      for (var i = 0; i < existingMap.inputs.length; i++) if (existingMap.inputs[i].signal === key) return existingMap.inputs[i];
+      return null;
+    }
+    function renderInputs() {
+      var box = document.getElementById('inputs'); box.innerHTML = '';
+      SIGNALS.filter(function (s) { return !ownedSignals[s.key]; }).forEach(function (sig) {
+        var prev = existingInput(sig.key);
+        var row = document.createElement('div'); row.className = 'row'; row.dataset.signal = sig.key;
+        var lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = SV ? sig.labelSv : sig.labelEn; row.appendChild(lbl);
+        var controls = document.createElement('div'); controls.className = 'controls';
+        var dev = document.createElement('select'); dev.className = 'in-device';
+        dev.appendChild(opt('', t('— not mapped —', '— ej kopplad —')));
+        relevantDevices(sig.filterCaps, sig.filterClasses, prev ? prev.deviceId : null).forEach(function (d) {
+          dev.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
+        });
+        if (prev) dev.value = prev.deviceId;
+        var cap = capSelectFor(deviceById(dev.value), prev ? prev.capability : null, sig.suggestCaps); cap.className = 'in-cap';
+        dev.addEventListener('change', function () {
+          var n = capSelectFor(deviceById(dev.value), null, sig.suggestCaps); n.className = 'in-cap';
+          controls.replaceChild(n, controls.querySelector('.in-cap'));
+        });
+        controls.appendChild(dev); controls.appendChild(cap); controls.appendChild(document.createElement('span'));
+        row.appendChild(controls); box.appendChild(row);
+      });
+    }
+
+    // ---- Devices section (grouped by taxonomy) ----
+    function renderDevices() {
+      var box = document.getElementById('devices'); box.innerHTML = '';
+      CATALOG.forEach(function (g) {
+        var card = document.createElement('div'); card.className = 'card';
+        var h = document.createElement('h3'); h.textContent = L(g); card.appendChild(h);
+        g.subgroups.forEach(function (sg) {
+          var prev = existingMap.controls[sg.key] || {};
+          var row = document.createElement('div'); row.className = 'row'; row.dataset.subgroup = sg.key;
+          var lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = L(sg); row.appendChild(lbl);
+
+          var sel = document.createElement('select'); sel.className = 'sg-presence';
+          relevantDevices(sg.filterCaps, sg.filterClasses, prev.deviceId).forEach(function (d) {
+            sel.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
+          });
+          sel.appendChild(opt('__absent__', t('Not installed', 'Ej installerad')));
+          sel.appendChild(opt('__simulate__', t('Simulate', 'Simulera')));
+          if (prev.presence === 'installed' && prev.deviceId) sel.value = prev.deviceId;
+          else if (prev.presence === 'simulate') sel.value = '__simulate__';
+          else sel.value = '__absent__';
+          row.appendChild(sel);
+
+          var fnbox = document.createElement('div'); fnbox.className = 'subfns'; row.appendChild(fnbox);
+          var mapFns = (sg.functions || []).filter(function (f) { return f.signalKey; });
+          function renderFns() {
+            fnbox.innerHTML = '';
+            var dev = deviceById(sel.value);
+            if (!dev) return; // only when a real device is chosen
+            mapFns.forEach(function (fn) {
+              var pf = (prev.functions && prev.functions[fn.key]) || {};
+              var lab = document.createElement('span'); lab.className = 'fn'; lab.textContent = L(fn); fnbox.appendChild(lab);
+              var cs = capSelectFor(dev, pf.capability, fn.suggestCaps); cs.className = 'fn-cap'; cs.dataset.fn = fn.key; cs.dataset.signal = fn.signalKey;
+              fnbox.appendChild(cs);
+            });
+          }
+          sel.addEventListener('change', renderFns);
+          renderFns();
+          card.appendChild(row);
+        });
+        box.appendChild(card);
+      });
+    }
+
+    // ---- Custom consumers ----
+    function renderCustom() {
+      document.getElementById('custom').innerHTML = '';
+      (existingMap.custom || []).forEach(function (c) { addCustomRow(c); });
+    }
+    function addCustomRow(c) {
+      c = c || {};
+      var box = document.getElementById('custom');
+      var wrap = document.createElement('div'); wrap.className = 'custom-item';
+      var name = document.createElement('input'); name.type = 'text'; name.placeholder = t('Name', 'Namn'); name.className = 'c-name'; if (c.name) name.value = c.name;
+      var dev = document.createElement('select'); dev.className = 'c-device';
+      dev.appendChild(opt('', t('— device —', '— enhet —')));
+      relevantDevices(['measure_power', 'onoff'], ['socket'], c.deviceId).forEach(function (d) { dev.appendChild(opt(d.id, d.name)); });
+      if (c.deviceId) dev.value = c.deviceId;
+      var mode = document.createElement('select'); mode.className = 'c-mode';
+      mode.appendChild(opt('monitor', t('Monitor only', 'Endast övervakad')));
+      mode.appendChild(opt('pausable', t('Pausable', 'Pausbar')));
+      if (c.mode) mode.value = c.mode;
+      var del = document.createElement('button'); del.className = 'smallbtn'; del.textContent = '✕';
+      del.addEventListener('click', function () { box.removeChild(wrap); });
+      wrap.appendChild(name); wrap.appendChild(dev); wrap.appendChild(mode); wrap.appendChild(del);
+      box.appendChild(wrap);
+    }
+
+    // ---- Editable level table ----
+    var LEVEL_ROWS = [
+      { key: 'ev', label: t('EV charger', 'Elbilsladdare'), type: 'amp' },
+      { key: 'spa', label: t('Spa', 'Spa'), type: 'temp' },
+      { key: 'nibe', label: t('Hot water', 'Varmvatten'), type: 'vv' },
+      { key: 'dishwasher', label: t('Dishwasher', 'Diskmaskin'), type: 'runpause' },
+      { key: 'washer', label: t('Washing machine', 'Tvättmaskin'), type: 'runpause' },
+      { key: 'dryer', label: t('Tumble dryer', 'Torktumlare'), type: 'runpause' },
+      { key: 'battery', label: t('Battery', 'Batteri'), type: 'battery' },
+    ];
+    function renderLevels() {
+      if (!LEVELS) return;
+      var head = document.getElementById('levels-head'); var body = document.getElementById('levels-body');
+      head.innerHTML = ''; body.innerHTML = '';
+      var htr = document.createElement('tr'); htr.appendChild(document.createElement('th')).className = 'dev';
+      LEVELS.levels.forEach(function (lvl) { var th = document.createElement('th'); th.className = 'd' + lvl; th.textContent = 'D' + lvl; htr.appendChild(th); });
+      head.appendChild(htr);
+      var fuseMax = Number(document.getElementById('fuse').value) || 32;
+      // Hide rows for devices marked "Not installed". matrixKey → presence.
+      var presenceByMatrix = {};
+      CATALOG.forEach(function (g) {
+        g.subgroups.forEach(function (sg) {
+          if (sg.matrixKey && existingMap.controls[sg.key]) presenceByMatrix[sg.matrixKey] = existingMap.controls[sg.key].presence;
+        });
+      });
+      LEVEL_ROWS.forEach(function (def) {
+        if (presenceByMatrix[def.key] === 'absent') return; // not installed → hide
+        var tr = document.createElement('tr'); tr.dataset.dev = def.key; tr.dataset.type = def.type;
+        var td0 = document.createElement('td'); td0.className = 'dev'; td0.textContent = def.label; tr.appendChild(td0);
+        LEVELS.levels.forEach(function (lvl) {
+          var td = document.createElement('td');
+          var v = LEVELS[def.key] ? LEVELS[def.key][lvl] : null;
+          var el;
+          if (def.type === 'runpause') {
+            el = document.createElement('select'); el.appendChild(opt('run', t('run', 'kör'))); el.appendChild(opt('pause', t('pause', 'paus'))); el.value = (v === 'pause') ? 'pause' : 'run';
+          } else if (def.type === 'battery') {
+            el = document.createElement('select'); el.appendChild(opt('charge', t('charge', 'ladda'))); el.appendChild(opt('discharge', t('discharge', 'urladdn'))); el.value = (v === 'charge') ? 'charge' : 'discharge';
+          } else if (def.type === 'amp') {
+            el = document.createElement('input'); el.type = 'number'; el.min = 0; el.max = fuseMax; el.step = 1; el.value = (v == null ? '' : Math.min(v, fuseMax));
+          } else { // temp / vv
+            el = document.createElement('input'); el.type = 'number'; el.min = 0; el.max = 70; el.step = 1;
+            el.value = (def.type === 'temp') ? (v && v.heat ? v.temp : 0) : (v == null ? '' : v);
+          }
+          el.dataset.lvl = lvl; td.appendChild(el); tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+    }
+    function buildOverride() {
+      var ov = {};
+      document.querySelectorAll('#levels-body tr').forEach(function (tr) {
+        var dev = tr.dataset.dev, type = tr.dataset.type; ov[dev] = { bands: {} };
+        tr.querySelectorAll('[data-lvl]').forEach(function (el) {
+          var lvl = el.dataset.lvl;
+          if (type === 'runpause') ov[dev].bands[lvl] = { action: el.value };
+          else if (type === 'battery') ov[dev].bands[lvl] = { mode: el.value };
+          else if (type === 'amp') ov[dev].bands[lvl] = { amp: Math.max(0, Math.round(Number(el.value) || 0)) };
+          else if (type === 'vv') ov[dev].bands[lvl] = { vv: Math.round(Number(el.value) || 0) };
+          else if (type === 'temp') { var temp = Math.round(Number(el.value) || 0); ov[dev].bands[lvl] = temp > 0 ? { temp: temp, heat: true } : { temp: 10, heat: false }; }
+        });
+      });
+      return ov;
+    }
+
+    // ---- Save ----
+    function collectMap() {
+      var inputs = [];
+      // Pure inputs
+      document.querySelectorAll('#inputs .row').forEach(function (row) {
+        var d = row.querySelector('.in-device').value, c = row.querySelector('.in-cap').value;
+        if (d && c) inputs.push({ signal: row.dataset.signal, deviceId: d, capability: c });
+      });
+      // Controlled devices → presence + function mappings (those with signalKey → inputs)
+      var controls = {};
+      document.querySelectorAll('#devices .row').forEach(function (row) {
+        var key = row.dataset.subgroup; var val = row.querySelector('.sg-presence').value;
+        var entry;
+        if (val === '__absent__') entry = { presence: 'absent' };
+        else if (val === '__simulate__') entry = { presence: 'simulate' };
+        else { entry = { presence: 'installed', deviceId: val, functions: {} };
+          row.querySelectorAll('.fn-cap').forEach(function (cs) {
+            if (cs.value) {
+              entry.functions[cs.dataset.fn] = { deviceId: val, capability: cs.value };
+              inputs.push({ signal: cs.dataset.signal, deviceId: val, capability: cs.value });
+            }
+          });
+        }
+        controls[key] = entry;
+      });
+      // Custom consumers
+      var custom = [];
+      document.querySelectorAll('#custom .custom-item').forEach(function (it, i) {
+        var d = it.querySelector('.c-device').value;
+        if (!d) return;
+        custom.push({ id: 'custom-' + i, name: it.querySelector('.c-name').value || ('Consumer ' + (i + 1)), deviceId: d, capability: 'measure_power', mode: it.querySelector('.c-mode').value });
+      });
+      var control = (existingMap && existingMap.control) ? existingMap.control : { house_meter_present: false };
+      return { inputs: inputs, control: control, controls: controls, custom: custom };
+    }
     function bindSave(Homey) {
       document.getElementById('save').addEventListener('click', function () {
-        var btn = this;
-        btn.disabled = true;
-        setStatus(t('Saving…', 'Sparar…'));
-        var map = collect();
+        var btn = this; btn.disabled = true; setStatus(t('Saving…', 'Sparar…'));
+        var map = collectMap();
+        var anchor = Math.round(Number(document.getElementById('anchor').value)); if (!isFinite(anchor) || anchor < 500) anchor = 4500;
+        var fuse = Number(document.getElementById('fuse').value) || 25;
+        var phases = Number(document.getElementById('phases').value) || 3;
+        var override = buildOverride();
         Promise.all([
           set(Homey, 'device_map', JSON.stringify(map)),
           set(Homey, 'estimate_when_no_meter', document.getElementById('estimate').checked),
+          set(Homey, 'anchor', anchor),
+          set(Homey, 'main_fuse_a', fuse),
+          set(Homey, 'phases', phases),
+          set(Homey, 'matrix_override', JSON.stringify(override)),
         ]).then(function () {
           existingMap = map;
-          setStatus(t('Saved ✓ (' + map.inputs.length + ' mapped)', 'Sparat ✓ (' + map.inputs.length + ' kopplade)'));
+          setStatus(t('Saved ✓', 'Sparat ✓'));
           btn.disabled = false;
-        }).catch(function (err) {
-          setStatus(t('Save failed: ', 'Kunde inte spara: ') + err);
-          btn.disabled = false;
-        });
+        }).catch(function (err) { setStatus(t('Save failed: ', 'Kunde inte spara: ') + err); btn.disabled = false; });
       });
     }
-
-    function setStatus(msg) { document.getElementById('status').textContent = msg; }
   </script>
 </body>
 </html>

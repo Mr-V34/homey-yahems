@@ -3,6 +3,8 @@
 const Homey = require('homey');
 const engine = require('./lib/engine');
 const signals = require('./lib/signals');
+const matrix = require('./lib/matrix');
+const catalog = require('./lib/catalog');
 
 module.exports = class YahemsApp extends Homey.App {
 
@@ -48,6 +50,7 @@ module.exports = class YahemsApp extends Homey.App {
       out.push({
         id: dev.id,
         name: dev.name || dev.id,
+        class: dev.class || 'other',
         zone: (zonesObj && dev.zone && zonesObj[dev.zone]) ? zonesObj[dev.zone].name : '',
         capabilities: caps,
       });
@@ -59,6 +62,46 @@ module.exports = class YahemsApp extends Homey.App {
   /** Settings-page data: the canonical signal catalogue (labels, kinds, hints). */
   apiGetSignals() {
     return signals.CATALOGUE;
+  }
+
+  /** Settings-page data: the device taxonomy (groups → subgroups → functions). */
+  apiGetCatalog() {
+    return catalog.CATALOG;
+  }
+
+  /** The effective matrix (defaults merged with the saved override, if valid). */
+  _effectiveMatrix() {
+    let raw;
+    try { raw = this.homey.settings.get('matrix_override'); } catch (_) { raw = null; }
+    if (!raw) return matrix.DEFAULT_MATRIX;
+    const v = matrix.validateMatrixOverride(raw);
+    if (!v.ok) return matrix.DEFAULT_MATRIX;
+    const merged = matrix.mergeMatrix(matrix.DEFAULT_MATRIX, v.override);
+    return matrix.validateMatrix(merged).ok ? merged : matrix.DEFAULT_MATRIX;
+  }
+
+  /**
+   * Settings-page data: a compact per-device, per-DEFCON summary of what YAHEMS
+   * does at each level, read from the matrix defaults. Raw values — the page
+   * formats units and translates words (run/pause/charge/…).
+   */
+  apiGetLevels() {
+    const m = this._effectiveMatrix();
+    const band = (dev, lvl) => (m[dev] && m[dev].bands && m[dev].bands[lvl]) || {};
+    const out = {
+      levels: [5, 4, 3, 2, 1],
+      ev: {}, spa: {}, nibe: {}, battery: {}, dishwasher: {}, washer: {}, dryer: {},
+    };
+    for (const lvl of out.levels) {
+      out.ev[lvl] = band('ev', lvl).amp;
+      out.spa[lvl] = { temp: band('spa', lvl).temp, heat: band('spa', lvl).heat };
+      out.nibe[lvl] = band('nibe', lvl).vv;
+      out.battery[lvl] = band('battery', lvl).mode;
+      out.dishwasher[lvl] = band('dishwasher', lvl).action;
+      out.washer[lvl] = band('washer', lvl).action;
+      out.dryer[lvl] = band('dryer', lvl).action;
+    }
+    return out;
   }
 
 };

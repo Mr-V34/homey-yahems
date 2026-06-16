@@ -75,8 +75,15 @@ without touching logic. Missing signals fall back to safe defaults.
 | **Spa (Balboa)** | 38 °C heat | 38 °C heat | 36 °C heat | 36 °C heat | pump on, **heat off** |
 | **EV (Zaptec)** | 32 A | 32 A | 16 A | 10 A | 0 A |
 | **Battery (Dyness TP7)** | charge 100 % | charge 50 % | discharge | discharge | discharge |
-| **Appliances** | run | run | run | pause | pause |
+| **Dishwasher** | run | run | run | run | pause |
+| **Washing machine** | run | run | run | pause | pause |
+| **Tumble dryer** | run | run | pause | pause | pause |
 | **Comfort loads** | allow | allow | allow | allow | allow |
+
+White goods are three independent devices (dryer pauses earliest), each with its own
+high-power threshold. These are the built-in defaults — every cell is editable on the
+App Settings page. The status colours follow the official DEFCON scale: **5 blue, 4
+green, 3 yellow, 2 red, 1 white.**
 
 Two invariants hold in **every** band, including D1:
 - **Frost protection never turns off.** The heat pump's `vv` stays ≥ 40 °C and its

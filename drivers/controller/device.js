@@ -105,8 +105,10 @@ module.exports = class ControllerDevice extends Homey.Device {
     // The App Settings page edits the device_map at app level. React to changes
     // immediately so the map takes effect without an app restart.
     this._onAppSettingsSet = (key) => {
-      if (key === 'device_map' || key === 'estimate_when_no_meter') {
+      const watched = ['device_map', 'estimate_when_no_meter', 'anchor', 'matrix_override', 'main_fuse_a', 'phases'];
+      if (watched.includes(key)) {
         if (key === 'device_map') this._loadDeviceMap();
+        if (key === 'matrix_override') this._loadMatrix();
         this.recompute().catch(this.error);
       }
     };
@@ -178,7 +180,11 @@ module.exports = class ControllerDevice extends Homey.Device {
    *   On success, this._matrix is updated to the merged+clamped matrix.
    */
   _loadMatrix() {
-    const raw = (this.getSettings() || {}).matrix_override || '{}';
+    // matrix_override is owned by the settings page (app settings). Fall back to a
+    // legacy device-level value, then to {} (built-in defaults).
+    let raw;
+    try { raw = this.homey.settings.get('matrix_override'); } catch (_) { raw = null; }
+    if (!raw) raw = (this.getSettings() || {}).matrix_override || '{}';
 
     // Step 1: validate override shape + parse.
     const { ok: parseOk, override, errors: parseErrors } = matrix.validateMatrixOverride(raw);
@@ -208,12 +214,11 @@ module.exports = class ControllerDevice extends Homey.Device {
     this.log('matrix_override applied successfully');
   }
 
-  async onSettings({ changedKeys }) {
-    // device_map now lives in app settings (handled by the app-settings listener
-    // in onInit); only matrix_override remains a device-level setting here.
-    if (changedKeys.some((k) => k === 'matrix_override')) {
-      this._loadMatrix();
-    }
+  async onSettings() {
+    // The only remaining device-level setting is house_meter_present (the control
+    // gate). Everything else (device_map, matrix_override, anchor, fuse, estimate)
+    // lives in app settings and is handled by the listener in onInit. Just recompute
+    // so a meter-gate change takes effect immediately.
     await this.recompute();
   }
 
@@ -231,7 +236,9 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   async onSetAnchor(w) {
-    if (Number.isFinite(w) && w > 0) await this.setSettings({ anchor: Math.round(w) });
+    // Anchor (the user's max power target) is an app-level setting owned by the
+    // settings page; writing it here fires the settings listener → recompute.
+    if (Number.isFinite(w) && w > 0) this.homey.settings.set('anchor', Math.round(w));
     await this.recompute();
     return true;
   }
@@ -376,7 +383,9 @@ module.exports = class ControllerDevice extends Homey.Device {
 
   async recompute() {
     const s = this.getSettings();
-    const anchor = Number(s.anchor) || 4500;
+    // Max power target: app setting (owned by the settings page) is authoritative;
+    // fall back to any legacy device-level setting, then the 4500 W default.
+    const anchor = Number(this.homey.settings.get('anchor')) || Number(s.anchor) || 4500;
 
     // The settings `house_meter_present` checkbox is authoritative.
     // map.control.house_meter_present is only used if the setting is absent.
@@ -386,13 +395,24 @@ module.exports = class ControllerDevice extends Homey.Device {
     const mode         = houseMeter ? 'control' : 'advisory';
 
     // --- Build HAL snapshot if the API is available and map has inputs ---
+    // DATA MINIMISATION: read ONLY the devices the user explicitly mapped, by id,
+    // rather than fetching every device on the Homey. This keeps the broad
+    // homey:manager:api permission scoped to what YAHEMS actually needs.
     let halSignals = {};
     if (this._api != null && this._deviceMap.inputs.length > 0) {
       try {
-        const devicesObj = await this._api.devices.getDevices();
+        const mappedIds = [...new Set(this._deviceMap.inputs.map((e) => e.deviceId))];
         // Build snapshot: { [deviceId]: { [capabilityId]: capabilityValue } }
         const snapshot = {};
-        for (const [id, dev] of Object.entries(devicesObj)) {
+        for (const id of mappedIds) {
+          let dev;
+          try {
+            dev = await this._api.devices.getDevice({ id });
+          } catch (e) {
+            // Mapped device removed/unavailable — omit it (HAL treats as absent,
+            // never substitutes zero). Do not abort the whole snapshot.
+            continue;
+          }
           if (dev && dev.capabilitiesObj) {
             snapshot[id] = {};
             for (const [capId, capObj] of Object.entries(dev.capabilitiesObj)) {
@@ -506,6 +526,10 @@ module.exports = class ControllerDevice extends Homey.Device {
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
     await this.setCapabilityValue('yahems_fault',  isFault).catch(this.error);
 
+    // House main fuse + phases (app settings) feed EV load-balancing / clamps.
+    const fuseA = Number(this.homey.settings.get('main_fuse_a'));
+    const phases = Number(this.homey.settings.get('phases'));
+
     // Build the full decideDevices() input: HAL signals spread in, then
     // consumption, defcon and localHour are always set explicitly.
     const decideInput = {
@@ -513,6 +537,8 @@ module.exports = class ControllerDevice extends Homey.Device {
       defcon,
       consumptionW: Math.max(0, r.average),
       localHour: new Date().getHours(),
+      ...(Number.isFinite(fuseA) ? { mainFuseA: fuseA } : {}),
+      ...(Number.isFinite(phases) ? { phases } : {}),
     };
     // Unwrap nested ev spread if halSignals brought ev.* fields; spread
     // already preserves the nested shape because resolveSignals uses _setPath.
@@ -535,7 +561,7 @@ module.exports = class ControllerDevice extends Homey.Device {
       `[${mode}] D${defcon} src=${sourceTag}${faultTag}${boostTag} | ev=${this._decisions.ev.amp}A `
       + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
-      + `appl=${this._decisions.appliances.action}`,
+      + `appl=${this._decisions.dishwasher.action[0]}${this._decisions.washer.action[0]}${this._decisions.dryer.action[0]}`,
     );
 
     // Apply decisions through the single gated chokepoint (compute-only for now).

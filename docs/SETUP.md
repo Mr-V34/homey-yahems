@@ -102,7 +102,10 @@ rarely need to see it, but the shape is:
 | `price_ore` | `priceOre` | Spot price in öre/kWh |
 | `ev_connected` | `ev.connected` | Boolean — car plugged in |
 | `ev_battery_soc_pct` | `ev.batterySocPct` | Car battery SoC 0–100 |
-| `appliance_power_w` | `appliancePowerW` | Current draw of high-power appliance (W) |
+| `solar_production_w` | `solarProductionW` | PV production (W) |
+| `dishwasher_power_w` | `dishwasherPowerW` | Dishwasher draw (W) — per-appliance high-power threshold |
+| `washer_power_w` | `washerPowerW` | Washing-machine draw (W) |
+| `dryer_power_w` | `dryerPowerW` | Tumble-dryer draw (W) |
 
 ### Optional `activeAbove`
 
@@ -135,15 +138,33 @@ safe: add signals gradually as you wire up hardware.
 
 ---
 
-## Settings
+## The App Settings page (v2)
+
+The **Configure** page is organised top-down so a non-technical user can set it up:
+
+1. **Limits** — your **Power limit (max)** in watts (net import at/above this is DEFCON
+   1; bands are thirds of it) and your **main fuse (A) + phases** (caps EV charging
+   current — a 25 A fuse forbids selecting 32 A).
+2. **Inputs (sensors)** — grid power, house consumption, electricity price.
+3. **No grid meter?** — the advisory-estimate switch (see below).
+4. **Your devices** — grouped by the taxonomy (Climate, Energy, EV, Appliances,
+   Cooking). Each device row lets you pick *your* device (the dropdown is filtered to
+   the relevant type — a charger row lists only chargers), or **Not installed**, or
+   **Simulate** (shows estimated behaviour without hardware; never actuates). Picking a
+   device reveals capability sub-pickers for that device's functions.
+5. **Your own consumers** — add custom loads (pausable or monitor-only).
+6. **How YAHEMS controls each level** — an **editable** table (D5→D1) of setpoints per
+   device. You change the defaults (e.g. spa off on D3–D1); contradictory schedules are
+   auto-rejected, keeping the last safe values. "Not installed" devices are hidden here.
+
+## Per-device settings
 
 | Setting | Default | Purpose |
 |---------|--------:|---------|
-| **Power target (anchor)** | 4500 W | Net import at/above which the house is at a full peak. The DEFCON bands are thirds of this value — see [DEFCON.md](DEFCON.md). Minimum 500 W (apartment owners with a realistic low peak). |
 | **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once a real grid/consumption signal (or the flow action) is reliably delivering live house power. |
 
-The **device map** and the **estimate** switch live on the App Settings page above,
-not in the per-device settings.
+Everything else (power limit, fuse, device map, level setpoints, estimate switch) lives
+on the App Settings page above, not in the per-device settings.
 
 ### Advisory → Control gate
 

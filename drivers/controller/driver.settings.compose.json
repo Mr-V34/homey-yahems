@@ -1,25 +1,9 @@
 [
   {
-    "id": "anchor",
-    "type": "number",
-    "label": { "en": "Power target (W)", "sv": "Effekttak (W)" },
-    "hint": { "en": "Net grid import above this is DEFCON 1. Bands are thirds of this value.", "sv": "Nettoimport över detta är DEFCON 1. Banden är tredjedelar av detta." },
-    "value": 4500,
-    "min": 500,
-    "max": 20000
-  },
-  {
     "id": "house_meter_present",
     "type": "checkbox",
     "label": { "en": "Real house meter connected", "sv": "Riktig husmätare ansluten" },
     "hint": { "en": "Switches from Advisory to Control. Keep off until YAHEMS can see real house consumption.", "sv": "Växlar från Rådgivande till Styrning. Håll av tills YAHEMS ser verklig husförbrukning." },
     "value": false
-  },
-  {
-    "id": "matrix_override",
-    "type": "textarea",
-    "label": { "en": "Matrix setpoint overrides (JSON)", "sv": "Matrisens börvärden (JSON)" },
-    "hint": { "en": "Override per-device setpoints as a JSON object. Values are automatically clamped to safe hardware limits and the result is rejected (with the previous safe values kept) if it produces a contradictory schedule. Leave as {} to use the built-in defaults. Example: {\"ev\":{\"bands\":{\"5\":{\"amp\":16},\"3\":{\"amp\":10}}},\"nibe\":{\"bands\":{\"5\":{\"vv\":50}}}}", "sv": "Åsidosätt börvärden per enhet som ett JSON-objekt. Värden begränsas automatiskt till hårdvarans säkerhetsgränser och resultatet avvisas (tidigare säkra värden behålls) om det ger ett motstridigt schema. Lämna som {} för att använda inbyggda standardvärden. Exempel: {\"ev\":{\"bands\":{\"5\":{\"amp\":16},\"3\":{\"amp\":10}}},\"nibe\":{\"bands\":{\"5\":{\"vv\":50}}}}" },
-    "value": "{}"
   }
 ]
