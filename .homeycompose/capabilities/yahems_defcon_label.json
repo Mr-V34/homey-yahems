@@ -1,16 +1,16 @@
 {
   "type": "enum",
   "title": { "en": "DEFCON level", "sv": "DEFCON-nivå" },
-  "desc": { "en": "Whole-home energy status as a colour-cued label, D5 (calm) to D1 (critical peak).", "sv": "Husets energistatus som färgmärkt etikett, D5 (lugnt) till D1 (kritisk topp)." },
+  "desc": { "en": "Whole-home energy status as a colour-cued label, D5 (own production) to D1 (critical).", "sv": "Husets energistatus som färgmärkt etikett, D5 (egenproduktion) till D1 (kritisk)." },
   "getable": true,
   "setable": false,
   "uiComponent": "sensor",
   "insights": false,
   "values": [
-    { "id": "d5", "title": { "en": "🔵 D5 · Calm", "sv": "🔵 D5 · Lugnt" } },
-    { "id": "d4", "title": { "en": "🟢 D4 · Comfortable", "sv": "🟢 D4 · Bekvämt" } },
-    { "id": "d3", "title": { "en": "🟡 D3 · Caution", "sv": "🟡 D3 · Försiktigt" } },
-    { "id": "d2", "title": { "en": "🔴 D2 · High", "sv": "🔴 D2 · Högt" } },
-    { "id": "d1", "title": { "en": "⚪ D1 · Critical", "sv": "⚪ D1 · Kritiskt" } }
+    { "id": "d5", "title": { "en": "🔵 D5 · Producing", "sv": "🔵 D5 · Egenproduktion" } },
+    { "id": "d4", "title": { "en": "🟢 D4 · Low", "sv": "🟢 D4 · Låg" } },
+    { "id": "d3", "title": { "en": "🟡 D3 · Medium", "sv": "🟡 D3 · Normal" } },
+    { "id": "d2", "title": { "en": "🔴 D2 · High", "sv": "🔴 D2 · Hög" } },
+    { "id": "d1", "title": { "en": "⚪ D1 · Critical", "sv": "⚪ D1 · Kritisk" } }
   ]
 }

@@ -55,7 +55,7 @@ equals the first sample, so there is no warm-up gap.)
 
 The controller's single on-screen DEFCON tile is `yahems_defcon_label`, a colour-cued
 label using the **official DEFCON colours** —
-🔵 D5 · Calm, 🟢 D4 · Comfortable, 🟡 D3 · Caution, 🔴 D2 · High, ⚪ D1 · Critical.
+🔵 D5 · Producing, 🟢 D4 · Low, 🟡 D3 · Medium, 🔴 D2 · High, ⚪ D1 · Critical.
 (Homey does not expose custom tile colours per value, so the colour is carried by the
 label's emoji, which renders consistently across the app and mobile card.)
 
@@ -77,11 +77,11 @@ the *calmer* level. Export or near-zero net is always DEFCON 5.
 
 | Level | Condition (averaged net import) | Meaning |
 |------:|---------------------------------|---------|
-| **5** | `net ≤ 5 W` (export / near zero) | Surplus — use and store everything |
-| **4** | `net ≤ anchor / 3` | Comfortable |
-| **3** | `net ≤ 2 × anchor / 3` | Watchful |
-| **2** | `net ≤ anchor` | Backing off |
-| **1** | `net > anchor` | Critical peak — shed load |
+| **5** | `net ≤ 5 W` (export / near zero) | Producing — own surplus; burn energy (charge EV, heat spa) |
+| **4** | `net ≤ anchor / 3` | Low — green light for scheduled heavy loads |
+| **3** | `net ≤ 2 × anchor / 3` | Medium — normal; devices run without restriction |
+| **2** | `net ≤ anchor` | High — throttle or pause flexible loads |
+| **1** | `net > anchor` | Critical — shed everything but essential operation |
 
 Worked example with the default anchor of **4500 W** (bands at 1500 / 3000 / 4500):
 
