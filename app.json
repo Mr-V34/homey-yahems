@@ -609,6 +609,146 @@
     }
   ],
   "capabilities": {
+    "yahems_allow_battery": {
+      "type": "boolean",
+      "title": {
+        "en": "Home battery",
+        "sv": "Husbatteri"
+      },
+      "titleTrue": {
+        "en": "Active",
+        "sv": "Aktivt"
+      },
+      "titleFalse": {
+        "en": "Idle",
+        "sv": "Vilar"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_allow_dishwasher": {
+      "type": "boolean",
+      "title": {
+        "en": "Dishwasher",
+        "sv": "Diskmaskin"
+      },
+      "titleTrue": {
+        "en": "Allowed",
+        "sv": "Tillåts"
+      },
+      "titleFalse": {
+        "en": "Paused",
+        "sv": "Pausad"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_allow_dryer": {
+      "type": "boolean",
+      "title": {
+        "en": "Tumble dryer",
+        "sv": "Torktumlare"
+      },
+      "titleTrue": {
+        "en": "Allowed",
+        "sv": "Tillåts"
+      },
+      "titleFalse": {
+        "en": "Paused",
+        "sv": "Pausad"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_allow_ev": {
+      "type": "boolean",
+      "title": {
+        "en": "EV charger",
+        "sv": "Elbilsladdare"
+      },
+      "titleTrue": {
+        "en": "Allowed",
+        "sv": "Tillåts"
+      },
+      "titleFalse": {
+        "en": "Paused",
+        "sv": "Pausad"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_allow_nibe": {
+      "type": "boolean",
+      "title": {
+        "en": "Heat pump",
+        "sv": "Värmepump"
+      },
+      "titleTrue": {
+        "en": "Allowed",
+        "sv": "Tillåts"
+      },
+      "titleFalse": {
+        "en": "Paused",
+        "sv": "Pausad"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_allow_spa": {
+      "type": "boolean",
+      "title": {
+        "en": "Hot tub",
+        "sv": "Spabad"
+      },
+      "titleTrue": {
+        "en": "Allowed",
+        "sv": "Tillåts"
+      },
+      "titleFalse": {
+        "en": "Paused",
+        "sv": "Pausad"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
+    "yahems_allow_washer": {
+      "type": "boolean",
+      "title": {
+        "en": "Washing machine",
+        "sv": "Tvättmaskin"
+      },
+      "titleTrue": {
+        "en": "Allowed",
+        "sv": "Tillåts"
+      },
+      "titleFalse": {
+        "en": "Paused",
+        "sv": "Pausad"
+      },
+      "uiComponent": "sensor",
+      "getable": true,
+      "setable": false,
+      "insights": true,
+      "icon": "/assets/icon.svg"
+    },
     "yahems_defcon": {
       "type": "number",
       "title": {

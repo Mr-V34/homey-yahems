@@ -203,6 +203,31 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   /**
+   * Show one status tile per CONFIGURED consumer on the device page, by adding a
+   * `yahems_allow_<matrixKey>` boolean capability for each installed/simulated
+   * controlled device and removing it when the device is "Not installed". The
+   * capability value is the allowed/paused state from the latest decisions.
+   * Capabilities are only added/removed on change (hasCapability guards churn).
+   */
+  async _syncStatusCapabilities() {
+    const controls = (this._deviceMap && this._deviceMap.controls) || {};
+    const d = this._decisions || {};
+    for (const sg of catalog.subgroups()) {
+      if (!sg.matrixKey) continue;
+      const cap = `yahems_allow_${sg.matrixKey}`;
+      const c = controls[sg.key];
+      const configured = c && c.presence !== 'absent';
+      if (configured) {
+        if (!this.hasCapability(cap)) await this.addCapability(cap).catch(this.error);
+        const st = this._decisionStatus(sg.matrixKey, d[sg.matrixKey]);
+        await this.setCapabilityValue(cap, st.allowed).catch(this.error);
+      } else if (this.hasCapability(cap)) {
+        await this.removeCapability(cap).catch(this.error);
+      }
+    }
+  }
+
+  /**
    * Live per-consumer overview for the settings page. Maps the latest decisions
    * (this._decisions) onto allowed/paused + a compact detail per configured device,
    * plus custom consumers. Pure read of cached state — no API calls, no writes.
@@ -718,6 +743,9 @@ module.exports = class ControllerDevice extends Homey.Device {
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
       + `appl=${this._decisions.dishwasher.action[0]}${this._decisions.washer.action[0]}${this._decisions.dryer.action[0]}`,
     );
+
+    // Reflect per-consumer allowed/paused state on the device page as status tiles.
+    await this._syncStatusCapabilities();
 
     // Apply decisions through the single gated chokepoint (compute-only for now).
     await this._applyDecisions(this._decisions, mode);

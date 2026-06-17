@@ -1,0 +1,11 @@
+{
+  "type": "boolean",
+  "title": { "en": "Heat pump", "sv": "Värmepump" },
+  "titleTrue": { "en": "Allowed", "sv": "Tillåts" },
+  "titleFalse": { "en": "Paused", "sv": "Pausad" },
+  "uiComponent": "sensor",
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "icon": "/assets/icon.svg"
+}
