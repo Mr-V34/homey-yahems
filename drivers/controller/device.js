@@ -56,6 +56,7 @@ module.exports = class ControllerDevice extends Homey.Device {
   async onInit() {
     this.buffer   = [];       // short rolling buffer for the responsive measure_power
     this._samples = [];       // timestamped samples for the 15-min (3×5-min) average
+    this._customTitles = {};  // last title pushed to each yahems_custom_N cap (avoids churn)
     this.gridW    = 0;        // fallback grid reading from flow action
     this._gridWReported = false; // true once a Report-grid-power flow value arrives
     this._lastDefcon = null;
@@ -222,6 +223,41 @@ module.exports = class ControllerDevice extends Homey.Device {
         await this.setCapabilityValue(cap, st.allowed).catch(this.error);
       } else if (this.hasCapability(cap)) {
         await this.removeCapability(cap).catch(this.error);
+      }
+    }
+  }
+
+  /**
+   * Show one status tile + insight per CUSTOM consumer ("Egna förbrukare") the user
+   * added on the settings page, mirroring the overview's allowed/paused state. These
+   * have arbitrary user names, so a fixed pool of generic capabilities
+   * (yahems_custom_1..N) is renamed at runtime via setCapabilityOptions so the tile
+   * AND the insight carry the consumer's own name — keeping them correlated with the
+   * overview. Slots beyond the configured count are removed. Up to MAX_CUSTOM_TILES.
+   */
+  async _syncCustomCapabilities() {
+    const customs = (this._deviceMap && this._deviceMap.custom) || [];
+    const defcon = Number(this.getCapabilityValue('yahems_defcon'));
+    const d = Number.isFinite(defcon) ? defcon : 3;
+    for (let i = 0; i < ControllerDevice.MAX_CUSTOM_TILES; i++) {
+      const cap = `yahems_custom_${i + 1}`;
+      const cu = customs[i];
+      if (cu) {
+        if (!this.hasCapability(cap)) await this.addCapability(cap).catch(this.error);
+        // Title = the consumer's own name (matches the overview). Only push on change.
+        const name = (cu.name || `Consumer ${i + 1}`).toString().slice(0, 60);
+        const title = `YAHEMS · ${name}`;
+        if (this._customTitles[cap] !== title) {
+          await this.setCapabilityOptions(cap, { title }).catch(this.error);
+          this._customTitles[cap] = title;
+        }
+        // Same rule as getStatusSnapshot: pausable customs are held back below DEFCON 3,
+        // monitor-only customs are always "allowed" (just watched).
+        const allowed = cu.mode === 'pausable' ? d >= 3 : true;
+        await this.setCapabilityValue(cap, allowed).catch(this.error);
+      } else if (this.hasCapability(cap)) {
+        await this.removeCapability(cap).catch(this.error);
+        delete this._customTitles[cap];
       }
     }
   }
@@ -420,6 +456,13 @@ module.exports = class ControllerDevice extends Homey.Device {
   // Kinds that can be boosted. comfort is excluded — it is always 'allow'.
   static get BOOSTABLE_KINDS() {
     return new Set(['nibe', 'spa', 'ev', 'battery', 'appliances']);
+  }
+
+  // Size of the custom-consumer status/insight capability pool (yahems_custom_1..N).
+  // Custom consumers beyond this still appear in the settings overview, just without
+  // their own controller-side insight tile.
+  static get MAX_CUSTOM_TILES() {
+    return 8;
   }
 
   /**
@@ -768,6 +811,7 @@ module.exports = class ControllerDevice extends Homey.Device {
 
     // Reflect per-consumer allowed/paused state on the device page as status tiles.
     await this._syncStatusCapabilities();
+    await this._syncCustomCapabilities();
 
     // Apply decisions through the single gated chokepoint (compute-only for now).
     await this._applyDecisions(this._decisions, mode);

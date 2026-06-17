@@ -164,7 +164,11 @@ The **Configure** page is organised top-down so a non-technical user can set it 
    **Simulate** (only in Simulation mode). A **Big load** checkbox (on heat pump, spa,
    EV, white goods) opts the device into the price slider. Picking a device reveals
    capability sub-pickers for that device's functions.
-6. **Your own consumers** — add custom loads (pausable or monitor-only).
+6. **Your own consumers** — add custom loads (pausable or monitor-only). Each one gets
+   its own **YAHEMS status insight on the controller**, named after the consumer so it
+   lines up with the overview (allowed/paused; monitor-only stays "allowed"). Up to 8
+   custom consumers get a controller-side insight tile; any beyond that still appear in
+   the overview.
 7. **How YAHEMS controls each level** — an **editable** table (D5→D1) of setpoints per
    device, with a live read-out of how the power limit splits across the DEFCON bands.
    You change the defaults (e.g. spa off on D3–D1); contradictory schedules are
