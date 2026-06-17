@@ -95,8 +95,8 @@
           "sv": "En sensorsignal blev inaktuell"
         },
         "titleFormatted": {
-          "en": "Sensor [[signal]] went stale",
-          "sv": "Sensor [[signal]] blev inaktuell"
+          "en": "A sensor signal went stale",
+          "sv": "En sensorsignal blev inaktuell"
         },
         "hint": {
           "en": "Fires when a sensor signal has not changed for the staleness window. YAHEMS holds at DEFCON 3 until the signal recovers.",
