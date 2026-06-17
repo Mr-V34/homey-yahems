@@ -175,8 +175,16 @@
         head.textContent = t('Mode', 'Läge') + ': ' + (st.mode || '—')
           + ' · DEFCON ' + (st.defcon != null ? st.defcon : '—')
           + ' · ' + t('Source', 'Källa') + ': ' + (st.source || '—')
-          + ' · ' + (st.power != null ? Math.round(st.power) + ' W' : '—');
+          + ' · ' + t('Now', 'Nu') + ': ' + (st.power != null ? Math.round(st.power) + ' W' : '—');
         box.appendChild(head);
+
+        // 15-minute average (the billed figure) + its three 5-minute sub-averages.
+        var avg = document.createElement('div'); avg.className = 'hint'; avg.style.marginBottom = '8px';
+        var wins = (st.windows || []).map(function (w) { return w == null ? '—' : Math.round(w) + ' W'; }).join(' · ');
+        avg.textContent = t('15-min average', '15-min snitt') + ': '
+          + (st.avg15 != null ? Math.round(st.avg15) + ' W' : t('warming up…', 'värms upp…'))
+          + (wins ? '  (3×5 min: ' + wins + ')' : '');
+        box.appendChild(avg);
         var rows = (st.devices || []).map(function (dv) {
           return { label: (SV ? dv.labelSv : dv.labelEn), allowed: dv.allowed, detail: dv.detail, presence: dv.presence, bigLoad: dv.bigLoad };
         });

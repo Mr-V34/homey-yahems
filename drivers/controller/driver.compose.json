@@ -1,7 +1,7 @@
 {
   "name": { "en": "YAHEMS Controller", "sv": "YAHEMS-styrenhet" },
   "class": "other",
-  "capabilities": ["yahems_defcon", "yahems_mode", "yahems_source", "measure_power", "yahems_fault"],
+  "capabilities": ["yahems_defcon", "yahems_defcon_label", "yahems_mode", "yahems_source", "measure_power", "yahems_avg15", "yahems_fault"],
   "platforms": ["local"],
   "connectivity": [],
   "images": {

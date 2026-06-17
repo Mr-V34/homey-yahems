@@ -53,7 +53,8 @@ const MAX_PLAUSIBLE_W = 30000;
 module.exports = class ControllerDevice extends Homey.Device {
 
   async onInit() {
-    this.buffer   = [];
+    this.buffer   = [];       // short rolling buffer for the responsive measure_power
+    this._samples = [];       // timestamped samples for the 15-min (3×5-min) average
     this.gridW    = 0;        // fallback grid reading from flow action
     this._gridWReported = false; // true once a Report-grid-power flow value arrives
     this._lastDefcon = null;
@@ -74,7 +75,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     };
 
     // Ensure required capabilities exist (including yahems_source + yahems_fault).
-    for (const c of ['yahems_defcon', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_fault']) {
+    for (const c of ['yahems_defcon', 'yahems_defcon_label', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_avg15', 'yahems_fault']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
     }
 
@@ -240,6 +241,10 @@ module.exports = class ControllerDevice extends Homey.Device {
       defcon: this.getCapabilityValue('yahems_defcon'),
       source: this.getCapabilityValue('yahems_source'),
       power: this.getCapabilityValue('measure_power'),
+      // 15-min average + its three 5-minute sub-averages (newest first), so the
+      // overview can show both the value and how it is built up.
+      avg15: Number.isFinite(this._avg15) ? this._avg15 : null,
+      windows: Array.isArray(this._windows) ? this._windows : [null, null, null],
       devices: [],
       custom: [],
     };
@@ -695,6 +700,15 @@ module.exports = class ControllerDevice extends Homey.Device {
     const r = engine.rollingAverage(this.buffer, consumptionWClamped, 3);
     this.buffer = r.buffer;
 
+    // 15-minute average (three consecutive 5-minute sub-averages) — the figure a
+    // grid power tariff actually bills. Computed from timestamped samples so it is
+    // correct regardless of the 60 s recompute cadence. Kept separate from
+    // measure_power (the short, responsive value) for its own YAHEMS insight.
+    const now = Date.now();
+    this._samples = engine.pushSample(this._samples, consumptionWClamped, now);
+    this._windows = engine.windowAverages(this._samples, now);
+    this._avg15 = engine.fifteenMinAverage(this._windows);
+
     // If stale OR implausible: force DEFCON 3 (fail safe — frost + comfort preserved).
     const defcon = isFault ? 3 : engine.defconFromNet(r.average, anchor);
 
@@ -703,7 +717,12 @@ module.exports = class ControllerDevice extends Homey.Device {
     await this.setCapabilityValue('yahems_mode',   mode).catch(this.error);
     await this.setCapabilityValue('yahems_source', sourceTag).catch(this.error);
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
+    await this.setCapabilityValue('yahems_defcon_label', `d${defcon}`).catch(this.error);
     await this.setCapabilityValue('yahems_fault',  isFault).catch(this.error);
+    // Only publish the 15-min average once a sub-window has data (avoid a fake 0).
+    if (Number.isFinite(this._avg15)) {
+      await this.setCapabilityValue('yahems_avg15', this._avg15).catch(this.error);
+    }
 
     // House main fuse + phases (app settings) feed EV load-balancing / clamps.
     const fuseA = Number(this.homey.settings.get('main_fuse_a'));

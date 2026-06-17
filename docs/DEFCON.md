@@ -22,11 +22,39 @@ the grid, the net number is negative.
 
 A single reading is noisy — a kettle switching on should not flip the whole house
 to a critical peak. Each new sample is pushed into a small rolling buffer and the
-**average of the last 3 samples** is what the ladder actually judges.
+**average of the last 3 samples** is what the ladder actually judges. This short
+average is published as the controller's `measure_power` ("Now").
 
 ```js
 const r = engine.rollingAverage(buffer, sample, 3); // { buffer, average }
 ```
+
+### The 15-minute average (`yahems_avg15`)
+
+Separately, YAHEMS tracks the figure a Swedish **effekttariff** actually bills: the
+average power over the last **15 minutes**, computed the same way the grid does — as
+**three consecutive 5-minute sub-averages**, then the mean of those. It is built
+from timestamped samples (not a fixed buffer), so it stays correct whatever the
+recompute cadence is, and each 5-minute sub-window is reported on its own.
+
+```js
+samples = engine.pushSample(samples, watts, Date.now()); // prunes > 15 min old
+const windows = engine.windowAverages(samples, Date.now()); // [recent, mid, oldest]
+const avg15 = engine.fifteenMinAverage(windows);            // mean of the available sub-averages
+```
+
+`yahems_avg15` has its **own YAHEMS insight** (graph), and both the value and its
+3×5-minute breakdown appear on the overview/status page. It is informational — the
+DEFCON ladder itself still judges the responsive short average above, so a sustained
+peak shows up immediately rather than 15 minutes late.
+
+### Status indicators on the controller
+
+The controller device shows DEFCON two ways: `yahems_defcon` (the number 1–5, with an
+insight) and `yahems_defcon_label`, a colour-cued label —
+🟢 D5 · Calm, 🟢 D4 · Comfortable, 🟡 D3 · Caution, 🟠 D2 · High, 🔴 D1 · Critical.
+(Homey does not expose custom tile colours per value, so the colour is carried by the
+label's emoji, which renders consistently across the app and mobile card.)
 
 ## Step 3 — The anchor
 

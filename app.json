@@ -563,9 +563,11 @@
       "class": "other",
       "capabilities": [
         "yahems_defcon",
+        "yahems_defcon_label",
         "yahems_mode",
         "yahems_source",
         "measure_power",
+        "yahems_avg15",
         "yahems_fault"
       ],
       "platforms": [
@@ -749,6 +751,27 @@
       "insights": true,
       "icon": "/assets/icon.svg"
     },
+    "yahems_avg15": {
+      "type": "number",
+      "title": {
+        "en": "15-min average",
+        "sv": "15-min snitt"
+      },
+      "desc": {
+        "en": "Net house power averaged over the last 15 minutes (three 5-minute sub-averages) — the figure a grid power tariff bills.",
+        "sv": "Husets nettoeffekt i snitt över senaste 15 minuterna (tre 5-minuterssnitt) — värdet en effekttariff debiterar."
+      },
+      "units": {
+        "en": "W",
+        "sv": "W"
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": true,
+      "decimals": 0,
+      "icon": "/assets/icon.svg"
+    },
     "yahems_defcon": {
       "type": "number",
       "title": {
@@ -768,6 +791,58 @@
       "step": 1,
       "decimals": 0,
       "icon": "/assets/icon.svg"
+    },
+    "yahems_defcon_label": {
+      "type": "enum",
+      "title": {
+        "en": "DEFCON level",
+        "sv": "DEFCON-nivå"
+      },
+      "desc": {
+        "en": "Whole-home energy status as a colour-cued label, D5 (calm) to D1 (critical peak).",
+        "sv": "Husets energistatus som färgmärkt etikett, D5 (lugnt) till D1 (kritisk topp)."
+      },
+      "getable": true,
+      "setable": false,
+      "uiComponent": "sensor",
+      "insights": false,
+      "values": [
+        {
+          "id": "d5",
+          "title": {
+            "en": "🟢 D5 · Calm",
+            "sv": "🟢 D5 · Lugnt"
+          }
+        },
+        {
+          "id": "d4",
+          "title": {
+            "en": "🟢 D4 · Comfortable",
+            "sv": "🟢 D4 · Bekvämt"
+          }
+        },
+        {
+          "id": "d3",
+          "title": {
+            "en": "🟡 D3 · Caution",
+            "sv": "🟡 D3 · Försiktigt"
+          }
+        },
+        {
+          "id": "d2",
+          "title": {
+            "en": "🟠 D2 · High",
+            "sv": "🟠 D2 · Högt"
+          }
+        },
+        {
+          "id": "d1",
+          "title": {
+            "en": "🔴 D1 · Critical",
+            "sv": "🔴 D1 · Kritiskt"
+          }
+        }
+      ]
     },
     "yahems_fault": {
       "type": "boolean",
