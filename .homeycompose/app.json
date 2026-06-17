@@ -43,6 +43,7 @@
     "getDevices": { "method": "get", "path": "/devices" },
     "getSignals": { "method": "get", "path": "/signals" },
     "getLevels": { "method": "get", "path": "/levels" },
-    "getCatalog": { "method": "get", "path": "/catalog" }
+    "getCatalog": { "method": "get", "path": "/catalog" },
+    "getStatus": { "method": "get", "path": "/status" }
   }
 }

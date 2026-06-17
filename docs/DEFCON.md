@@ -124,6 +124,17 @@ The battery has three SOC guard rails, checked against the band's intent:
 | Reserve | 15 % | On a discharge band, stop supporting the house (protect reserve) |
 | Safety | 5 % | Idle, and veto EV charging |
 
+### "Storförbrukare" (big-load) price hold
+
+Any controlled device the user ticks as a **big load** follows the price slider.
+When a live electricity price is mapped and exceeds the slider threshold
+(`matrix.ev.gateOre`), that device is evaluated at its **critical (D1) band** —
+its most conservative, frost-safe setpoint — regardless of the house DEFCON:
+the heat pump drops to its hot-water/frost floor, the spa's electric heat goes off
+(circulation pump stays on), white goods pause, and the EV holds (its existing
+confirm flow). A **boost always wins** — issuing a boost means "I'll pay to run it
+now." The home battery is never a big load; it keeps its own SoC/price logic.
+
 ### Appliance high-power pause
 
 At D2/D1, if a high-power appliance measurement is present and exceeds the

@@ -45,11 +45,29 @@
   <h1>YAHEMS</h1>
   <p class="lede" id="lede"></p>
 
+  <h2 id="h-overview"></h2>
+  <div class="card">
+    <div id="overview"></div>
+    <button class="smallbtn" id="refresh-overview" style="margin-top:8px;"></button>
+  </div>
+
+  <h2 id="h-mode"></h2>
+  <div class="card">
+    <label id="l-mode" style="display:block;margin-bottom:6px;"></label>
+    <select id="op-mode">
+      <option value="simulation"></option>
+      <option value="advisory"></option>
+      <option value="full"></option>
+    </select>
+    <div class="hint" id="mode-hint"></div>
+  </div>
+
   <h2 id="h-limits"></h2>
   <div class="card">
     <div class="limit-row">
       <label id="l-max"></label>
-      <input type="number" id="anchor" class="big" min="500" max="30000" step="100" /> <span>W</span>
+      <input type="range" id="anchor" min="500" max="20000" step="100" style="width:55%;vertical-align:middle;" />
+      <span id="anchor-val" style="font-weight:bold;font-size:16px;"></span>
     </div>
     <div class="limit-row">
       <label id="l-fuse"></label>
@@ -64,7 +82,10 @@
   <div class="card"><div id="inputs"></div></div>
 
   <div class="card">
-    <label class="toggle"><input type="checkbox" id="estimate" /> <span id="estimate-label"></span></label>
+    <label id="l-pricegate" style="display:block;margin-bottom:6px;"></label>
+    <input type="range" id="price-gate" min="0" max="500" step="5" style="width:68%;vertical-align:middle;" />
+    <span id="price-gate-val" style="margin-left:8px;font-weight:bold;"></span>
+    <div class="hint" id="pricegate-hint"></div>
   </div>
 
   <h2 id="h-devices"></h2>
@@ -79,6 +100,7 @@
   <h2 id="h-levels"></h2>
   <div class="card">
     <p class="lede" id="levels-lede"></p>
+    <div class="hint" id="defcon-bands" style="margin-bottom:8px;font-size:12px;color:#444;"></div>
     <table class="levels"><thead id="levels-head"></thead><tbody id="levels-body"></tbody></table>
   </div>
 
@@ -97,11 +119,107 @@
     var ownedSignals = {};   // signalKeys owned by a catalog function (excluded from Inputs)
     var customCounter = 0;
     var FUSES = [16, 20, 25, 35, 50, 63];
+    var OPMODE = 'advisory';  // simulation | advisory | full
+    // Matrix keys that may be flagged as a big load (price-slider follower).
+    // Battery is excluded (it has its own price logic).
+    var BIGLOAD_KEYS = { nibe: 1, spa: 1, ev: 1, dishwasher: 1, washer: 1, dryer: 1 };
+
+    // Live per-mode hint + dependent re-renders (simulate option visibility).
+    function updateModeUI() {
+      var hint = document.getElementById('mode-hint');
+      if (OPMODE === 'simulation') {
+        hint.textContent = t(
+          'Try YAHEMS with devices you don’t own. Pick “Simulate” on a device to see its behaviour. Never controls anything.',
+          'Prova YAHEMS med enheter du inte har. Välj ”Simulera” på en enhet för att se beteendet. Styr aldrig något.');
+      } else if (OPMODE === 'full') {
+        hint.textContent = t(
+          'Reads a real meter and may control installed devices. Note: actual device control is the next build — for now it reads and computes.',
+          'Läser en riktig mätare och får styra installerade enheter. Obs: faktisk enhetsstyrning är nästa bygge — just nu läser och beräknar den.');
+      } else {
+        hint.textContent = t(
+          'Uses your installed devices and reads Homey Energy’s whole-home total — ideal without a P1/energy dongle. Advisory only; switch to Full operation when ready.',
+          'Använder dina installerade enheter och läser Homey Energys hustotal — perfekt utan P1/energidongel. Endast rådgivande; växla till Full drift när du är redo.');
+      }
+      // Simulate presence is only offered in simulation mode → re-render device rows.
+      // Capture current selections first so switching mode never wipes in-progress edits.
+      if (CATALOG && CATALOG.length) { existingMap = collectMap(); renderDevices(); }
+    }
+
+    // ---- Overview: live per-consumer allowed/paused ----
+    function trDetail(d) {
+      if (!d) return '';
+      return String(d)
+        .replace(/\brun\b/, t('run', 'körs')).replace(/\bpause\b/, t('pause', 'paus'))
+        .replace(/\bmonitor\b/, t('monitor', 'övervakas')).replace(/\bcharge\b/, t('charge', 'laddar'))
+        .replace(/\bdischarge\b/, t('discharge', 'urladdar')).replace(/\bidle\b/, t('idle', 'vilar'))
+        .replace(/\bheat\b/, t('heat', 'värme')).replace(/\bprice\b/, t('price', 'pris')).replace(/\bboost\b/, t('boost', 'boost'));
+    }
+    function badge(allowed) {
+      var s = document.createElement('span');
+      s.textContent = allowed ? t('Allowed', 'Tillåts') : t('Paused', 'Pausad');
+      s.style.cssText = 'font-size:11px;padding:2px 9px;border-radius:10px;color:#fff;white-space:nowrap;background:'
+        + (allowed ? '#2E7D32' : '#D32F2F') + ';';
+      return s;
+    }
+    function renderOverview(Homey) {
+      var box = document.getElementById('overview');
+      box.textContent = t('Loading…', 'Laddar…');
+      apiGet(Homey, '/status').then(function (st) {
+        box.innerHTML = '';
+        if (!st || !st.available) {
+          box.textContent = t('No controller paired yet — add the YAHEMS Controller device.',
+            'Ingen styrenhet ännu — lägg till enheten YAHEMS Controller.');
+          return;
+        }
+        var head = document.createElement('div'); head.className = 'hint'; head.style.marginBottom = '8px';
+        head.textContent = t('Mode', 'Läge') + ': ' + (st.mode || '—')
+          + ' · DEFCON ' + (st.defcon != null ? st.defcon : '—')
+          + ' · ' + t('Source', 'Källa') + ': ' + (st.source || '—')
+          + ' · ' + (st.power != null ? Math.round(st.power) + ' W' : '—');
+        box.appendChild(head);
+        var rows = (st.devices || []).map(function (dv) {
+          return { label: (SV ? dv.labelSv : dv.labelEn), allowed: dv.allowed, detail: dv.detail, presence: dv.presence, bigLoad: dv.bigLoad };
+        });
+        (st.custom || []).forEach(function (cu) { rows.push({ label: cu.name, allowed: cu.allowed, detail: cu.detail, custom: true }); });
+        if (!rows.length) {
+          var e = document.createElement('div'); e.className = 'hint';
+          e.textContent = t('No devices configured yet.', 'Inga enheter konfigurerade än.');
+          box.appendChild(e); return;
+        }
+        rows.forEach(function (rw) {
+          var r = document.createElement('div'); r.className = 'row';
+          r.style.cssText = 'display:flex;align-items:center;gap:8px;';
+          var nm = document.createElement('div'); nm.className = 'label'; nm.style.flex = '1';
+          nm.textContent = rw.label
+            + (rw.presence === 'simulate' ? ' (' + t('sim', 'sim') + ')' : '')
+            + (rw.bigLoad ? ' ⚡' : '');
+          r.appendChild(nm);
+          var det = document.createElement('span'); det.className = 'note'; det.textContent = trDetail(rw.detail);
+          r.appendChild(det);
+          r.appendChild(badge(rw.allowed));
+          box.appendChild(r);
+        });
+      }).catch(function (err) { box.textContent = t('Status unavailable: ', 'Status ej tillgänglig: ') + err; });
+    }
+
+    // DEFCON band transparency: bands are thirds of the anchor (mirrors engine).
+    function renderDefconBands() {
+      var a = Math.round(Number(document.getElementById('anchor').value));
+      var av = document.getElementById('anchor-val'); if (av) av.textContent = (isFinite(a) ? a : '—') + ' W';
+      var el = document.getElementById('defcon-bands');
+      if (!isFinite(a) || a < 1) { el.textContent = ''; return; }
+      var t3 = Math.round(a / 3), t23 = Math.round(2 * a / 3);
+      el.innerHTML = t('Power limit', 'Effektgräns') + ' ' + a + ' W → '
+        + '<b>D5</b> ≤5 W · <b>D4</b> ≤' + t3 + ' W · <b>D3</b> ≤' + t23
+        + ' W · <b>D2</b> ≤' + a + ' W · <b>D1</b> >' + a + ' W';
+    }
 
     function onHomeyReady(Homey) {
       document.getElementById('lede').textContent = t(
         'Place your devices, set your limits, and tune what YAHEMS does at each level.',
         'Placera dina enheter, sätt dina gränser och justera vad YAHEMS gör på varje nivå.');
+      document.getElementById('h-overview').textContent = t('Overview', 'Översikt');
+      document.getElementById('refresh-overview').textContent = t('Refresh', 'Uppdatera');
       document.getElementById('h-limits').textContent = t('Limits', 'Gränser');
       document.getElementById('l-max').textContent = t('Power limit (max)', 'Effektgräns (max)');
       document.getElementById('l-fuse').textContent = t('Main fuse', 'Huvudsäkring');
@@ -110,9 +228,28 @@
         'Import at/above the power limit is DEFCON 1. The main fuse caps EV charging current.',
         'Import på/över effektgränsen är DEFCON 1. Huvudsäkringen begränsar elbilens laddström.');
       document.getElementById('h-inputs').textContent = t('Inputs (sensors)', 'Insignaler (sensorer)');
-      document.getElementById('estimate-label').textContent = t(
-        'No grid meter? Run in advisory estimate (works with no P1/energy dongle).',
-        'Ingen elmätare? Kör i rådgivande uppskattning (fungerar utan P1/energidongel).');
+      document.getElementById('h-mode').textContent = t('Operating mode', 'Driftläge');
+      document.getElementById('l-mode').textContent = t('How YAHEMS should work:', 'Hur YAHEMS ska arbeta:');
+      (function () {
+        var o = document.getElementById('op-mode').options;
+        o[0].textContent = t('Simulation — try devices you don’t own', 'Simulering — prova enheter du inte har');
+        o[1].textContent = t('Advisory — installed devices, reads Homey Energy', 'Rådgivande — installerade enheter, läser Homey Energy');
+        o[2].textContent = t('Full operation — read meter & control devices', 'Full drift — läs mätare & styr enheter');
+      })();
+      document.getElementById('op-mode').addEventListener('change', function () { OPMODE = this.value; updateModeUI(); });
+      document.getElementById('l-pricegate').textContent = t(
+        'Price sensitivity — hold big loads above:',
+        'Priskänslighet — håll storförbrukare över:');
+      document.getElementById('pricegate-hint').textContent = t(
+        'Drag from cheap to expensive. Devices ticked as “big load” are held back when the mapped electricity price is above this threshold. Needs a mapped price device to act.',
+        'Dra från billigt till dyrt. Enheter som bockats som ”storförbrukare” hålls tillbaka när det mappade elpriset är över denna tröskel. Kräver en mappad prisenhet för att verka.');
+      (function () {
+        var pg = document.getElementById('price-gate');
+        var pv = document.getElementById('price-gate-val');
+        var show = function () { pv.textContent = pg.value + ' ' + t('öre/kWh', 'öre/kWh'); };
+        pg.addEventListener('input', show);
+        pg._show = show;
+      })();
       document.getElementById('h-devices').textContent = t('Your devices', 'Dina enheter');
       document.getElementById('h-custom').textContent = t('Your own consumers', 'Egna förbrukare');
       document.getElementById('add-custom').textContent = t('+ Add consumer', '+ Lägg till förbrukare');
@@ -124,16 +261,31 @@
 
       Promise.all([
         apiGet(Homey, '/signals'), apiGet(Homey, '/devices'), apiGet(Homey, '/catalog'), apiGet(Homey, '/levels'),
-        get(Homey, 'device_map'), get(Homey, 'estimate_when_no_meter'),
+        get(Homey, 'device_map'), get(Homey, 'op_mode'),
         get(Homey, 'anchor'), get(Homey, 'main_fuse_a'), get(Homey, 'phases'),
+        get(Homey, 'house_meter_present'), get(Homey, 'price_gate_ore'),
       ]).then(function (r) {
         SIGNALS = r[0] || []; DEVICES = r[1] || []; CATALOG = r[2] || []; LEVELS = r[3] || null;
         existingMap = parseMap(r[4]);
-        document.getElementById('estimate').checked = (r[5] !== false);
+        var mode = r[5];
+        if (mode !== 'simulation' && mode !== 'advisory' && mode !== 'full') {
+          mode = (r[9] === true) ? 'full' : 'advisory'; // legacy house_meter_present ⇒ full
+        }
+        OPMODE = mode;
+        document.getElementById('op-mode').value = mode;
         document.getElementById('anchor').value = numOr(r[6], 4500);
+        document.getElementById('anchor').addEventListener('input', renderDefconBands);
         buildFuse(numOr(r[7], 25), numOr(r[8], 3));
+        (function () {
+          var pg = document.getElementById('price-gate');
+          pg.value = numOr(r[10], 300);
+          pg._show();
+        })();
         computeOwned();
         renderInputs(); renderDevices(); renderCustom(); renderLevels();
+        renderDefconBands(); updateModeUI();
+        renderOverview(Homey);
+        document.getElementById('refresh-overview').addEventListener('click', function () { renderOverview(Homey); });
         document.getElementById('add-custom').addEventListener('click', function () { addCustomRow({}); });
         document.getElementById('save').disabled = false;
         bindSave(Homey);
@@ -187,9 +339,11 @@
       for (var i = 0; i < dev.capabilities.length; i++) if (caps.indexOf(baseCap(dev.capabilities[i].id)) !== -1) return true;
       return false;
     }
-    function relevantDevices(filterCaps, filterClasses, keepId) {
+    function relevantDevices(filterCaps, filterClasses, keepId, wholeHome) {
       return DEVICES.filter(function (d) {
-        if (d.id === keepId) return true;
+        if (d.id === keepId) return true;       // keep an already-mapped device
+        if (d.ours) return false;               // never list YAHEMS's own devices
+        if (wholeHome) return d.cumulative === true; // only true whole-home meters
         if (filterClasses && filterClasses.indexOf(d.class) !== -1) return true;
         return deviceHasCap(d, filterCaps);
       });
@@ -217,6 +371,11 @@
     }
     function renderInputs() {
       var box = document.getElementById('inputs'); box.innerHTML = '';
+      var hint = document.createElement('div'); hint.className = 'hint';
+      hint.textContent = t(
+        'All optional. Grid / house meters list only whole-home meters — in an apartment leave them empty and YAHEMS uses the Homey Energy total.',
+        'Allt valfritt. Nät-/husmätare visar bara hela-hemmet-mätare — i en lägenhet lämnar du dem tomma och YAHEMS använder Homey Energy-totalen.');
+      box.appendChild(hint);
       SIGNALS.filter(function (s) { return !ownedSignals[s.key]; }).forEach(function (sig) {
         var prev = existingInput(sig.key);
         var row = document.createElement('div'); row.className = 'row'; row.dataset.signal = sig.key;
@@ -224,7 +383,7 @@
         var controls = document.createElement('div'); controls.className = 'controls';
         var dev = document.createElement('select'); dev.className = 'in-device';
         dev.appendChild(opt('', t('— not mapped —', '— ej kopplad —')));
-        relevantDevices(sig.filterCaps, sig.filterClasses, prev ? prev.deviceId : null).forEach(function (d) {
+        relevantDevices(sig.filterCaps, sig.filterClasses, prev ? prev.deviceId : null, sig.wholeHome).forEach(function (d) {
           dev.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
         });
         if (prev) dev.value = prev.deviceId;
@@ -254,11 +413,22 @@
             sel.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
           });
           sel.appendChild(opt('__absent__', t('Not installed', 'Ej installerad')));
-          sel.appendChild(opt('__simulate__', t('Simulate', 'Simulera')));
+          // "Simulate" is only offered in Simulation mode (try devices you don't own).
+          // Kept here, guarded, so it stays available for the future in other modes.
+          if (OPMODE === 'simulation') sel.appendChild(opt('__simulate__', t('Simulate', 'Simulera')));
           if (prev.presence === 'installed' && prev.deviceId) sel.value = prev.deviceId;
-          else if (prev.presence === 'simulate') sel.value = '__simulate__';
+          else if (prev.presence === 'simulate' && OPMODE === 'simulation') sel.value = '__simulate__';
           else sel.value = '__absent__';
           row.appendChild(sel);
+
+          // "Storförbrukare" (big-load): this device follows the price slider.
+          if (BIGLOAD_KEYS[sg.matrixKey]) {
+            var blLab = document.createElement('label'); blLab.className = 'toggle'; blLab.style.marginTop = '6px';
+            var blCb = document.createElement('input'); blCb.type = 'checkbox'; blCb.className = 'sg-bigload';
+            blCb.checked = prev.bigLoad === true;
+            var blTxt = document.createElement('span'); blTxt.textContent = t('Big load (follows price slider)', 'Storförbrukare (följer prisreglaget)');
+            blLab.appendChild(blCb); blLab.appendChild(blTxt); row.appendChild(blLab);
+          }
 
           var fnbox = document.createElement('div'); fnbox.className = 'subfns'; row.appendChild(fnbox);
           var mapFns = (sg.functions || []).filter(function (f) { return f.signalKey; });
@@ -392,6 +562,8 @@
             }
           });
         }
+        var bl = row.querySelector('.sg-bigload');
+        if (bl && bl.checked) entry.bigLoad = true;
         controls[key] = entry;
       });
       // Custom consumers
@@ -414,10 +586,11 @@
         var override = buildOverride();
         Promise.all([
           set(Homey, 'device_map', JSON.stringify(map)),
-          set(Homey, 'estimate_when_no_meter', document.getElementById('estimate').checked),
+          set(Homey, 'op_mode', document.getElementById('op-mode').value),
           set(Homey, 'anchor', anchor),
           set(Homey, 'main_fuse_a', fuse),
           set(Homey, 'phases', phases),
+          set(Homey, 'price_gate_ore', Number(document.getElementById('price-gate').value) || 300),
           set(Homey, 'matrix_override', JSON.stringify(override)),
         ]).then(function () {
           existingMap = map;

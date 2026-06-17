@@ -6,6 +6,7 @@ const matrix = require('../../lib/matrix');
 const hal = require('../../lib/hal');
 const simgate = require('../../lib/simgate');
 const simfeeder = require('../../lib/simfeeder');
+const catalog = require('../../lib/catalog');
 
 // =============================================================================
 // ACTUATION GATE — read before changing this file
@@ -105,10 +106,10 @@ module.exports = class ControllerDevice extends Homey.Device {
     // The App Settings page edits the device_map at app level. React to changes
     // immediately so the map takes effect without an app restart.
     this._onAppSettingsSet = (key) => {
-      const watched = ['device_map', 'estimate_when_no_meter', 'anchor', 'matrix_override', 'main_fuse_a', 'phases'];
+      const watched = ['device_map', 'op_mode', 'anchor', 'matrix_override', 'main_fuse_a', 'phases', 'price_gate_ore'];
       if (watched.includes(key)) {
         if (key === 'device_map') this._loadDeviceMap();
-        if (key === 'matrix_override') this._loadMatrix();
+        if (key === 'matrix_override' || key === 'price_gate_ore') this._loadMatrix();
         this.recompute().catch(this.error);
       }
     };
@@ -155,17 +156,148 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   /**
-   * Whether to run the advisory consumption estimate when no real power source
-   * is available. App-level setting `estimate_when_no_meter`, default TRUE so the
-   * app gives honest guidance out of the box on a Homey with no P1/energy dongle.
-   * @returns {boolean}
+   * Operating mode (the single top-level switch on the settings page):
+   *   - 'simulation' — try things you don't own; never actuates; synthetic feed.
+   *   - 'advisory'   — installed devices; reads Homey Energy total; never actuates.
+   *   - 'full'       — installed devices; real meter; actuation gate OPEN.
+   * Back-compat: the legacy `house_meter_present` device checkbox = 'full'.
+   * @returns {'simulation'|'advisory'|'full'}
    */
-  _estimateWhenNoMeter() {
+  _opMode() {
     try {
-      const v = this.homey.settings.get('estimate_when_no_meter');
-      return v !== false; // default true (undefined/null → true)
-    } catch (_) {
-      return true;
+      const v = this.homey.settings.get('op_mode');
+      if (v === 'simulation' || v === 'advisory' || v === 'full') return v;
+    } catch (_) { /* fall through */ }
+    try {
+      if ((this.getSettings() || {}).house_meter_present === true) return 'full';
+    } catch (_) { /* fall through */ }
+    return 'advisory';
+  }
+
+  /**
+   * Which fallback source to use when no real meter/flow signal is mapped.
+   * Derived from the operating mode:
+   *   - simulation → 'estimate' (synthetic season-aware model)
+   *   - advisory / full → 'homey_energy' (real aggregated total; auto-falls back
+   *     to the estimate inside the precedence if the report is unavailable).
+   * @returns {'homey_energy'|'estimate'}
+   */
+  _noMeterSource() {
+    return this._opMode() === 'simulation' ? 'estimate' : 'homey_energy';
+  }
+
+  /**
+   * Build the big-load ("Storförbrukare") set for the matrix, mapping each
+   * controlled subgroup the user flagged onto its matrix key (heatpump→nibe …).
+   * @returns {object} e.g. { ev: true, spa: true }
+   */
+  _bigLoads() {
+    const out = {};
+    const controls = (this._deviceMap && this._deviceMap.controls) || {};
+    for (const sg of catalog.subgroups()) {
+      if (!sg.matrixKey) continue;
+      const c = controls[sg.key];
+      if (c && c.bigLoad === true) out[sg.matrixKey] = true;
+    }
+    return out;
+  }
+
+  /**
+   * Live per-consumer overview for the settings page. Maps the latest decisions
+   * (this._decisions) onto allowed/paused + a compact detail per configured device,
+   * plus custom consumers. Pure read of cached state — no API calls, no writes.
+   */
+  getStatusSnapshot() {
+    const d = this._decisions || {};
+    const controls = (this._deviceMap && this._deviceMap.controls) || {};
+    const out = {
+      mode: this.getCapabilityValue('yahems_mode'),
+      defcon: this.getCapabilityValue('yahems_defcon'),
+      source: this.getCapabilityValue('yahems_source'),
+      power: this.getCapabilityValue('measure_power'),
+      devices: [],
+      custom: [],
+    };
+    const defcon = Number.isFinite(out.defcon) ? out.defcon : 3;
+    for (const sg of catalog.subgroups()) {
+      if (!sg.matrixKey) continue;
+      const c = controls[sg.key];
+      if (!c || c.presence === 'absent') continue;
+      const st = this._decisionStatus(sg.matrixKey, d[sg.matrixKey]);
+      out.devices.push({
+        labelEn: sg.labelEn,
+        labelSv: sg.labelSv,
+        presence: c.presence,
+        bigLoad: c.bigLoad === true,
+        allowed: st.allowed,
+        detail: st.detail,
+      });
+    }
+    for (const cu of (this._deviceMap.custom || [])) {
+      const pausable = cu.mode === 'pausable';
+      // Pausable customs are held back at a peak (DEFCON 2/1); monitor-only are
+      // just watched. (No per-custom threshold yet — sensible default.)
+      const allowed = pausable ? defcon >= 3 : true;
+      out.custom.push({
+        name: cu.name || 'Consumer',
+        mode: cu.mode || 'monitor',
+        allowed,
+        detail: pausable ? (allowed ? 'run' : 'pause') : 'monitor',
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Map one device's decision to { allowed, detail }. `detail` is compact and
+   * mostly numeric/unit; flag tags (price/boost) are appended when present.
+   */
+  _decisionStatus(key, dec) {
+    if (!dec) return { allowed: true, detail: '—' };
+    const flags = dec.flags || [];
+    const tags = [];
+    if (dec.priceHold || flags.includes('price-hold')) tags.push('price');
+    if (dec.boosted || flags.includes('boosted')) tags.push('boost');
+    const suffix = tags.length ? ` [${tags.join(',')}]` : '';
+    switch (key) {
+      case 'ev': return { allowed: dec.amp > 0, detail: `${dec.amp} A${suffix}` };
+      case 'spa': return { allowed: dec.heat === true, detail: `${dec.temp}°C${suffix}` };
+      case 'nibe': return { allowed: true, detail: `vv ${dec.vv}°C${suffix}` };
+      case 'battery': return { allowed: dec.mode !== 'idle', detail: `${dec.mode}${suffix}` };
+      case 'dishwasher':
+      case 'washer':
+      case 'dryer': return { allowed: dec.action === 'run', detail: `${dec.action}${suffix}` };
+      default: return { allowed: true, detail: '—' };
+    }
+  }
+
+  /**
+   * Read Homey Energy's aggregated whole-home live total as net house watts.
+   * Homey already sums every device's measure_power, so this is real data, not a
+   * guess. Returns null if the API is unavailable or the report has no usable
+   * figure, so the caller can fall through to the synthetic estimate.
+   * @returns {Promise<number|null>}
+   */
+  async _readHomeyEnergyW() {
+    if (this._api == null || this._api.energy == null) return null;
+    try {
+      const report = await this._api.energy.getLiveReport({});
+      if (!this._loggedLiveReport) {
+        // One-time shape confirmation on the real Homey (field names vary by fw).
+        this.log(`Homey Energy live report sample: ${JSON.stringify(report).slice(0, 300)}`);
+        this._loggedLiveReport = true;
+      }
+      const gross = simfeeder.houseNetFromLiveReport(report);
+      if (!Number.isFinite(gross)) return null;
+      // Homey Energy counts THIS controller's own measure_power in the total
+      // (it appears as a load like any other device). Subtract our own current
+      // contribution so we never feed our reading back into itself — otherwise
+      // the value would compound every cycle. This settles at the real house draw.
+      const own = Number(this.getCapabilityValue('measure_power')) || 0;
+      return Math.max(0, gross - own);
+    } catch (err) {
+      this.log(`Homey Energy live report read failed: ${err.message}`);
+      return null;
     }
   }
 
@@ -207,6 +339,16 @@ module.exports = class ControllerDevice extends Homey.Device {
         `matrix_override rejected (monotonicity violation) — keeping last good matrix: ${monoErrors.join('; ')}`
       );
       return; // keep this._matrix as-is
+    }
+
+    // Apply the user's price-gate slider: the öre/kWh threshold above which
+    // expensive loads (EV charging) are held pending confirmation. This is a
+    // single instrument, independent of the per-band level table. `merged` is a
+    // deep clone (mergeMatrix uses JSON round-trip), so mutating it is safe.
+    let gate;
+    try { gate = Number(this.homey.settings.get('price_gate_ore')); } catch (_) { gate = NaN; }
+    if (Number.isFinite(gate) && merged.ev) {
+      merged.ev.gateOre = Math.max(0, Math.min(10000, Math.round(gate)));
     }
 
     // All checks passed: adopt the merged matrix.
@@ -387,12 +529,8 @@ module.exports = class ControllerDevice extends Homey.Device {
     // fall back to any legacy device-level setting, then the 4500 W default.
     const anchor = Number(this.homey.settings.get('anchor')) || Number(s.anchor) || 4500;
 
-    // The settings `house_meter_present` checkbox is authoritative.
-    // map.control.house_meter_present is only used if the setting is absent.
-    const settingMeter = s.house_meter_present;
-    const mapMeter     = this._deviceMap.control.house_meter_present === true;
-    const houseMeter   = settingMeter === true || (settingMeter === undefined && mapMeter);
-    const mode         = houseMeter ? 'control' : 'advisory';
+    // Operating mode drives advisory vs control. Only 'full' actuates.
+    const mode = this._opMode() === 'full' ? 'control' : 'advisory';
 
     // --- Build HAL snapshot if the API is available and map has inputs ---
     // DATA MINIMISATION: read ONLY the devices the user explicitly mapped, by id,
@@ -433,9 +571,13 @@ module.exports = class ControllerDevice extends Homey.Device {
     //   1. grid_power_w  — signed inverter/Shelly CT reading (preferred meter).
     //   2. home_consumption_w — mapped house-draw meter (P1/HAN, PbtH).
     //   3. flow-action gridW — "Report grid power" flow input.
-    //   4. estimate    — advisory no-meter fallback (lib/simfeeder), if enabled.
+    //   4. no-meter fallback — per the `no_meter_source` setting:
+    //        'homey_energy' → Homey Energy's aggregated whole-home live total
+    //                         (real summed device power; great for apartments),
+    //        'estimate'     → synthetic season-aware model (lib/simfeeder),
+    //        'off'          → hold neutral.
     // Each real source clamps to >= 0. Only when NOTHING real is available do we
-    // fall back to the estimate, so a fake zero is never reported as surplus.
+    // fall back, so a fake zero is never reported as surplus.
     let consumptionW;
     let sourceTag;
     if (Number.isFinite(halSignals.gridPowerW)) {
@@ -447,20 +589,32 @@ module.exports = class ControllerDevice extends Homey.Device {
     } else if (this._gridWReported === true) {
       consumptionW = Math.max(0, this.gridW);
       sourceTag = 'flow';
-    } else if (this._estimateWhenNoMeter()) {
-      consumptionW = simfeeder.estimateConsumptionW({});
-      sourceTag = 'estimated';
     } else {
-      // No source and estimate disabled: hold neutral (DEFCON 3 via fault path
-      // is overkill; use 0 but tag as estimated-off so the UI is honest).
-      consumptionW = 0;
-      sourceTag = 'estimated';
+      const noMeterSource = this._noMeterSource();
+      const energyW = noMeterSource === 'homey_energy'
+        ? await this._readHomeyEnergyW()
+        : null;
+      if (Number.isFinite(energyW)) {
+        // Homey Energy whole-home total — real summed data. Stays advisory;
+        // unlocking control still requires a dedicated meter (house_meter_present).
+        consumptionW = Math.max(0, energyW);
+        sourceTag = 'homey_energy';
+      } else if (noMeterSource === 'off') {
+        // No source and fallback disabled: hold neutral (use 0 but tag honestly).
+        consumptionW = 0;
+        sourceTag = 'estimated';
+      } else {
+        // 'estimate', or 'homey_energy' chosen but unavailable this cycle.
+        consumptionW = simfeeder.estimateConsumptionW({});
+        sourceTag = 'estimated';
+      }
     }
 
-    // Fault detection only applies to REAL sensor sources. The advisory estimate
-    // is intentionally steady (and model-bounded), so it can neither go stale nor
-    // read implausibly high — skip both checks for it.
-    const isRealSource = sourceTag !== 'estimated';
+    // Fault detection only applies to REAL dedicated sensor sources. The advisory
+    // estimate is intentionally steady, and the Homey Energy aggregate can briefly
+    // read low before devices report — neither can go stale or read implausibly
+    // high in a meaningful way, so skip both checks for them.
+    const isRealSource = ['grid_ct', 'measured', 'flow'].includes(sourceTag);
 
     // --- Implausible-reading check ---
     // Values above MAX_PLAUSIBLE_W indicate a spoofed or broken meter.
@@ -537,6 +691,7 @@ module.exports = class ControllerDevice extends Homey.Device {
       defcon,
       consumptionW: Math.max(0, r.average),
       localHour: new Date().getHours(),
+      bigLoads: this._bigLoads(),
       ...(Number.isFinite(fuseA) ? { mainFuseA: fuseA } : {}),
       ...(Number.isFinite(phases) ? { phases } : {}),
     };
@@ -623,15 +778,11 @@ module.exports = class ControllerDevice extends Homey.Device {
       throw new Error('_write: HomeyAPI is not initialised — cannot actuate');
     }
     // Determine current mode at call time (not cached, always fresh).
-    const s = this.getSettings();
-    const settingMeter = s.house_meter_present;
-    const mapMeter = this._deviceMap.control.house_meter_present === true;
-    const houseMeter = settingMeter === true || (settingMeter === undefined && mapMeter);
-    const mode = houseMeter ? 'control' : 'advisory';
-    if (mode !== 'control') {
+    // Only 'full' operating mode may actuate.
+    if (this._opMode() !== 'full') {
       throw new Error(
-        `_write: refused in advisory mode (deviceId=${deviceId} cap=${capability}). `
-        + 'Enable house_meter_present before actuating.',
+        `_write: refused outside full mode (deviceId=${deviceId} cap=${capability}). `
+        + 'Switch the operating mode to Full to actuate.',
       );
     }
     await simgate.guardActuation(() =>

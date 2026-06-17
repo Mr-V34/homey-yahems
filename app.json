@@ -80,6 +80,10 @@
     "getCatalog": {
       "method": "get",
       "path": "/catalog"
+    },
+    "getStatus": {
+      "method": "get",
+      "path": "/status"
     }
   },
   "flow": {
@@ -702,6 +706,13 @@
           "title": {
             "en": "Flow action",
             "sv": "Flödesåtgärd"
+          }
+        },
+        {
+          "id": "homey_energy",
+          "title": {
+            "en": "Homey Energy total",
+            "sv": "Homey Energy-total"
           }
         },
         {

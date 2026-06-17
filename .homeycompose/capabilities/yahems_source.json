@@ -10,6 +10,7 @@
     { "id": "measured", "title": { "en": "Measured (house meter)", "sv": "Uppmätt (husmätare)" } },
     { "id": "grid_ct", "title": { "en": "Grid CT / inverter", "sv": "Nät-CT / växelriktare" } },
     { "id": "flow", "title": { "en": "Flow action", "sv": "Flödesåtgärd" } },
+    { "id": "homey_energy", "title": { "en": "Homey Energy total", "sv": "Homey Energy-total" } },
     { "id": "estimated", "title": { "en": "Estimated (no meter)", "sv": "Uppskattad (ingen mätare)" } }
   ]
 }

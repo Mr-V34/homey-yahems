@@ -35,4 +35,9 @@ module.exports = {
     return homey.app.apiGetCatalog();
   },
 
+  /** GET /status → live overview: per-consumer allowed/paused + mode/defcon. */
+  async getStatus({ homey }) {
+    return homey.app.apiGetStatus();
+  },
+
 };

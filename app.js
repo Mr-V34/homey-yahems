@@ -53,6 +53,12 @@ module.exports = class YahemsApp extends Homey.App {
         class: dev.class || 'other',
         zone: (zonesObj && dev.zone && zonesObj[dev.zone]) ? zonesObj[dev.zone].name : '',
         capabilities: caps,
+        // YAHEMS's own devices (the controller) must never appear in the pickers —
+        // mapping ourselves would create a reading loop.
+        ours: typeof dev.driverId === 'string' && dev.driverId.indexOf('com.v34.yahems') !== -1,
+        // Whole-home cumulative meter (P1/HAN, grid CT). Used to filter the grid /
+        // house-consumption slots to real meters instead of every power-metered plug.
+        cumulative: !!(dev.energyObj && dev.energyObj.cumulative === true),
       });
     }
     out.sort((a, b) => a.name.localeCompare(b.name));
@@ -67,6 +73,23 @@ module.exports = class YahemsApp extends Homey.App {
   /** Settings-page data: the device taxonomy (groups → subgroups → functions). */
   apiGetCatalog() {
     return catalog.CATALOG;
+  }
+
+  /**
+   * Live overview for the settings page: the controller's current per-consumer
+   * allowed/paused state plus mode/DEFCON/source. Reads the single controller
+   * device's snapshot; returns { available:false } if it isn't paired yet.
+   */
+  apiGetStatus() {
+    try {
+      const driver = this.homey.drivers.getDriver('controller');
+      const devices = driver ? driver.getDevices() : [];
+      const dev = devices && devices[0];
+      if (!dev || typeof dev.getStatusSnapshot !== 'function') return { available: false };
+      return Object.assign({ available: true }, dev.getStatusSnapshot());
+    } catch (err) {
+      return { available: false, error: err.message };
+    }
   }
 
   /** The effective matrix (defaults merged with the saved override, if valid). */

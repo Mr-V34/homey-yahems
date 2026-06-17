@@ -28,7 +28,7 @@ cards below. After pairing you will see three capabilities:
 |------------|---------|
 | `yahems_defcon` | The current DEFCON level (1–5), shown as a sensor. |
 | `yahems_mode` | `advisory` (read-only) or `control` (acting on the house). |
-| `yahems_source` | Where the power reading comes from: `measured`, `grid_ct`, `flow`, or `estimated`. |
+| `yahems_source` | Where the power reading comes from: `measured`, `grid_ct`, `flow`, `homey_energy`, or `estimated`. |
 | `measure_power` | The smoothed net grid power the level is computed from. |
 
 ---
@@ -58,8 +58,9 @@ that device's capabilities — no JSON, no UUIDs. Map what you own, leave the re
 unmapped, and press **Save**. The page writes the validated map into the app's
 settings and the controller picks it up immediately (no restart).
 
-It also exposes the **"No grid meter? Run in advisory estimate"** switch (on by
-default — see [Running without a meter](#running-without-a-meter)).
+The **operating mode** at the top decides whether simulated devices are offered and
+whether YAHEMS may actuate; in Advisory/Full it reads Homey Energy's total when no
+dedicated meter is mapped (see [Running without a meter](#running-without-a-meter)).
 
 ### JSON format (reference / advanced)
 
@@ -98,8 +99,7 @@ rarely need to see it, but the shape is:
 | `grid_power_w` | `gridPowerW` | **Net grid power, signed** (+ import / − export) from a hybrid-inverter CT or Shelly EM. Preferred grid source — no P1 dongle needed. |
 | `home_consumption_w` | `consumptionW` | Net whole-house draw from your grid meter (W) |
 | `battery_soc_pct` | `socPct` | House battery state-of-charge 0–100 |
-| `price_level` | `priceLevel` | Tibber price level 1 (expensive) – 5 (cheap) |
-| `price_ore` | `priceOre` | Spot price in öre/kWh |
+| `price_ore` | `priceOre` | Spot price in öre/kWh (map a Tibber/spot-price device). The **price-sensitivity slider** sets the öre/kWh threshold this is compared against. |
 | `ev_connected` | `ev.connected` | Boolean — car plugged in |
 | `ev_battery_soc_pct` | `ev.batterySocPct` | Car battery SoC 0–100 |
 | `solar_production_w` | `solarProductionW` | PV production (W) |
@@ -142,19 +142,30 @@ safe: add signals gradually as you wire up hardware.
 
 The **Configure** page is organised top-down so a non-technical user can set it up:
 
-1. **Limits** — your **Power limit (max)** in watts (net import at/above this is DEFCON
+1. **Operating mode** (`op_mode`) — the single top-level switch:
+   - **Simulation** — try YAHEMS with devices you don't own (pick *Simulate* on a
+     device); never controls anything; uses a synthetic feed.
+   - **Advisory** (default) — your installed devices; reads **Homey Energy's** whole-home
+     total as house consumption (ideal without a P1/energy dongle); never actuates.
+   - **Full operation** — reads a real meter/dongle and *may* control installed devices.
+     (Actual device control is the next build; for now it reads and computes.)
+2. **Limits** — your **Power limit (max)** in watts (net import at/above this is DEFCON
    1; bands are thirds of it) and your **main fuse (A) + phases** (caps EV charging
    current — a 25 A fuse forbids selecting 32 A).
-2. **Inputs (sensors)** — grid power, house consumption, electricity price.
-3. **No grid meter?** — the advisory-estimate switch (see below).
-4. **Your devices** — grouped by the taxonomy (Climate, Energy, EV, Appliances,
+3. **Inputs (sensors)** — all optional. Grid power and house consumption list only
+   whole-home meters (leave empty in an apartment); electricity price (öre/kWh).
+4. **Price sensitivity slider** — sets the öre/kWh threshold above which any device
+   ticked as a **big load** (*Storförbrukare*) is held back (needs a mapped price device).
+5. **Your devices** — grouped by the taxonomy (Climate, Energy, EV, Appliances,
    Cooking). Each device row lets you pick *your* device (the dropdown is filtered to
    the relevant type — a charger row lists only chargers), or **Not installed**, or
-   **Simulate** (shows estimated behaviour without hardware; never actuates). Picking a
-   device reveals capability sub-pickers for that device's functions.
-5. **Your own consumers** — add custom loads (pausable or monitor-only).
-6. **How YAHEMS controls each level** — an **editable** table (D5→D1) of setpoints per
-   device. You change the defaults (e.g. spa off on D3–D1); contradictory schedules are
+   **Simulate** (only in Simulation mode). A **Big load** checkbox (on heat pump, spa,
+   EV, white goods) opts the device into the price slider. Picking a device reveals
+   capability sub-pickers for that device's functions.
+6. **Your own consumers** — add custom loads (pausable or monitor-only).
+7. **How YAHEMS controls each level** — an **editable** table (D5→D1) of setpoints per
+   device, with a live read-out of how the power limit splits across the DEFCON bands.
+   You change the defaults (e.g. spa off on D3–D1); contradictory schedules are
    auto-rejected, keeping the last safe values. "Not installed" devices are hidden here.
 
 ## Per-device settings
@@ -185,14 +196,22 @@ net-power reading is taken from the first available of, in order:
 1. **`grid_power_w`** — a signed grid CT (hybrid inverter / Shelly EM).
 2. **`home_consumption_w`** — a mapped whole-house meter.
 3. The **Report grid power** flow action.
-4. An **advisory estimate** — a season-aware base + heat-pump load model
-   (`lib/simfeeder.js` `estimateConsumptionW`), used only when nothing real is
-   mapped and the estimate switch is on.
+4. The **no-meter fallback**, derived from the operating mode (`op_mode`):
+   - **Advisory / Full → Homey Energy total** (`homey_energy`) — Homey Energy already
+     sums every added device's `measure_power` into a whole-home live total. That
+     aggregate is real data, so on an apartment with no dedicated meter it is an
+     honest stand-in for house consumption (net = consumed − generated, ≥ 0). Read
+     via `energy.getLiveReport()`; parsed by `lib/simfeeder.js`
+     `houseNetFromLiveReport`. The controller subtracts its own `measure_power` from
+     the total so it never counts itself.
+   - **Simulation → built-in estimate** (`estimate`) — a season-aware base + heat-pump
+     load model (`lib/simfeeder.js` `estimateConsumptionW`).
 
 The active source is shown live in the `yahems_source` capability. While the source
-is `estimated`, the figure is guidance only — YAHEMS **never actuates** in this state
-(it is advisory by definition until the house-meter gate is on), and staleness/
-implausibility faults are suppressed because the estimate is intentionally steady.
+is `homey_energy` or `estimated`, the figure is guidance only — YAHEMS **never
+actuates** in these states (it stays advisory until a *dedicated* meter satisfies the
+house-meter gate), and staleness/implausibility faults are suppressed because these
+sources are advisory by design.
 
 ## Flow cards
 
