@@ -1,6 +1,6 @@
 {
   "type": "boolean",
-  "title": { "en": "Dishwasher", "sv": "Diskmaskin" },
+  "title": { "en": "YAHEMS · Dishwasher", "sv": "YAHEMS · Diskmaskin" },
   "titleTrue": { "en": "Allowed", "sv": "Tillåts" },
   "titleFalse": { "en": "Paused", "sv": "Pausad" },
   "uiComponent": "sensor",

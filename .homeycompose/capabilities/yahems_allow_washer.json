@@ -1,6 +1,6 @@
 {
   "type": "boolean",
-  "title": { "en": "Washing machine", "sv": "Tvättmaskin" },
+  "title": { "en": "YAHEMS · Washing machine", "sv": "YAHEMS · Tvättmaskin" },
   "titleTrue": { "en": "Allowed", "sv": "Tillåts" },
   "titleFalse": { "en": "Paused", "sv": "Pausad" },
   "uiComponent": "sensor",

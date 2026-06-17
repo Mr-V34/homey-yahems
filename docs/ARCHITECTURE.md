@@ -73,12 +73,13 @@ private `_applyDecisions(decisions, mode)` method. It currently returns
 immediately. Future writes must live here, gated on `mode === 'control'` and
 wrapped in `simgate.guardActuation()`.
 
-The `house_meter_present` device setting is the **control gate**:
-- `false` (default) → `mode = 'advisory'` — computes, never actuates.
-- `true` → `mode = 'control'` — (future) allows `_applyDecisions()` to actuate.
+The `op_mode` app setting (settings page: Simulation / Advisory / Full operation) is
+the single **control gate**, read via `device.js _opMode()`:
+- `simulation` / `advisory` → `mode = 'advisory'` — computes, never actuates.
+- `full` → `mode = 'control'` — (future) allows `_applyDecisions()` to actuate.
 
-The advisory/control mode is also readable via the `yahems_mode` device capability
-and from `map.control.house_meter_present` (the settings checkbox takes priority).
+The resulting mode is also readable via the `yahems_mode` device capability. There is
+no per-device meter checkbox; selecting Full operation is the gate.
 
 ## Testing
 

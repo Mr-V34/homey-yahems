@@ -1,6 +1,6 @@
 {
   "type": "boolean",
-  "title": { "en": "Tumble dryer", "sv": "Torktumlare" },
+  "title": { "en": "YAHEMS · Tumble dryer", "sv": "YAHEMS · Torktumlare" },
   "titleTrue": { "en": "Allowed", "sv": "Tillåts" },
   "titleFalse": { "en": "Paused", "sv": "Pausad" },
   "uiComponent": "sensor",

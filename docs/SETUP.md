@@ -85,12 +85,13 @@ rarely need to see it, but the shape is:
       "deviceId":   "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
       "capability": "charging_cable_connected"
     }
-  ],
-  "control": {
-    "house_meter_present": false
-  }
+  ]
 }
 ```
+
+> Advisory vs control is governed solely by the **operating mode** (`op_mode`) on the
+> App Settings page — not by the device map. (A `control` block may still appear in a
+> stored map for backward compatibility; it is ignored.)
 
 ### Canonical signal keys
 
@@ -147,8 +148,9 @@ The **Configure** page is organised top-down so a non-technical user can set it 
      device); never controls anything; uses a synthetic feed.
    - **Advisory** (default) — your installed devices; reads **Homey Energy's** whole-home
      total as house consumption (ideal without a P1/energy dongle); never actuates.
-   - **Full operation** — reads a real meter/dongle and *may* control installed devices.
-     (Actual device control is the next build; for now it reads and computes.)
+   - **Full operation** — uses your best available house reading (a real meter/dongle,
+     or Homey Energy in an apartment) and *may* control installed devices. Available in
+     any home. (Actual device control is the next build; for now it reads and computes.)
 2. **Limits** — your **Power limit (max)** in watts (net import at/above this is DEFCON
    1; bands are thirds of it) and your **main fuse (A) + phases** (caps EV charging
    current — a 25 A fuse forbids selecting 32 A).
@@ -170,23 +172,21 @@ The **Configure** page is organised top-down so a non-technical user can set it 
 
 ## Per-device settings
 
-| Setting | Default | Purpose |
-|---------|--------:|---------|
-| **Real house meter connected** | off | The **Control gate**. While off, YAHEMS stays in *advisory* (read-only). Turn on only once a real grid/consumption signal (or the flow action) is reliably delivering live house power. |
-
-Everything else (power limit, fuse, device map, level setpoints, estimate switch) lives
-on the App Settings page above, not in the per-device settings.
+YAHEMS adds **no device-level settings** of its own — everything (operating mode,
+power limit, fuse, device map, level setpoints, price gate) lives on the App Settings
+page above. The only entries under the device's *Properties* are Homey's built-ins
+(e.g. *Exclude from Energy*).
 
 ### Advisory → Control gate
 
-| `house_meter_present` setting | Mode | Behaviour |
-|-------------------------------|------|-----------|
-| `false` (default) | **advisory** | Computes decisions and logs them. No writes to any downstream device. |
-| `true` | **control** | (Future) Allows `_applyDecisions()` to actuate mapped devices. |
+The **operating mode** (`op_mode`) on the App Settings page is the single switch —
+there is no separate per-device meter checkbox.
 
-The setting checkbox takes priority over `control.house_meter_present` in the JSON
-map. Keep the checkbox off until your grid/consumption signal (or the flow action)
-is producing reliable real-time data.
+| `op_mode` | `yahems_mode` | Behaviour |
+|-----------|---------------|-----------|
+| `simulation` | **advisory** | Synthetic feed; computes and logs; never actuates. |
+| `advisory` (default) | **advisory** | Real installed devices + Homey Energy total; computes and logs; never actuates. |
+| `full` | **control** | (Future) Allows `_applyDecisions()` to actuate mapped devices. Selecting Full **is** the gate — available in any home. |
 
 ## Running without a meter
 

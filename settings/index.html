@@ -133,8 +133,8 @@
           'Prova YAHEMS med enheter du inte har. Välj ”Simulera” på en enhet för att se beteendet. Styr aldrig något.');
       } else if (OPMODE === 'full') {
         hint.textContent = t(
-          'Reads a real meter and may control installed devices. Note: actual device control is the next build — for now it reads and computes.',
-          'Läser en riktig mätare och får styra installerade enheter. Obs: faktisk enhetsstyrning är nästa bygge — just nu läser och beräknar den.');
+          'Uses your best available house reading (a real meter/dongle, or Homey Energy in an apartment) and may control installed devices. Available in any home. Note: actual device control is the next build — for now it reads and computes.',
+          'Använder husets bästa tillgängliga mätvärde (en riktig mätare/dongel, eller Homey Energy i en lägenhet) och får styra installerade enheter. Tillgängligt i alla hem. Obs: faktisk enhetsstyrning är nästa bygge — just nu läser och beräknar den.');
       } else {
         hint.textContent = t(
           'Uses your installed devices and reads Homey Energy’s whole-home total — ideal without a P1/energy dongle. Advisory only; switch to Full operation when ready.',
@@ -271,13 +271,13 @@
         apiGet(Homey, '/signals'), apiGet(Homey, '/devices'), apiGet(Homey, '/catalog'), apiGet(Homey, '/levels'),
         get(Homey, 'device_map'), get(Homey, 'op_mode'),
         get(Homey, 'anchor'), get(Homey, 'main_fuse_a'), get(Homey, 'phases'),
-        get(Homey, 'house_meter_present'), get(Homey, 'price_gate_ore'),
+        get(Homey, 'price_gate_ore'),
       ]).then(function (r) {
         SIGNALS = r[0] || []; DEVICES = r[1] || []; CATALOG = r[2] || []; LEVELS = r[3] || null;
         existingMap = parseMap(r[4]);
         var mode = r[5];
         if (mode !== 'simulation' && mode !== 'advisory' && mode !== 'full') {
-          mode = (r[9] === true) ? 'full' : 'advisory'; // legacy house_meter_present ⇒ full
+          mode = 'advisory'; // operating mode is the single source of truth
         }
         OPMODE = mode;
         document.getElementById('op-mode').value = mode;
@@ -286,7 +286,7 @@
         buildFuse(numOr(r[7], 25), numOr(r[8], 3));
         (function () {
           var pg = document.getElementById('price-gate');
-          pg.value = numOr(r[10], 300);
+          pg.value = numOr(r[9], 300);
           pg._show();
         })();
         computeOwned();

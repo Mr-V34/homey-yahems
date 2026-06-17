@@ -1,8 +1,8 @@
 {
   "type": "boolean",
   "title": {
-    "en": "Sensor fault",
-    "sv": "Sensorfel"
+    "en": "YAHEMS · Sensor fault",
+    "sv": "YAHEMS · Sensorfel"
   },
   "uiComponent": "sensor",
   "getable": true,

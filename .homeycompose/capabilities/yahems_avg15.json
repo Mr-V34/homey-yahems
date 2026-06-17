@@ -1,6 +1,6 @@
 {
   "type": "number",
-  "title": { "en": "15-min average", "sv": "15-min snitt" },
+  "title": { "en": "YAHEMS · 15-min average", "sv": "YAHEMS · 15-min snitt" },
   "desc": { "en": "Net house power averaged over the last 15 minutes (three 5-minute sub-averages) — the figure a grid power tariff bills.", "sv": "Husets nettoeffekt i snitt över senaste 15 minuterna (tre 5-minuterssnitt) — värdet en effekttariff debiterar." },
   "units": { "en": "W", "sv": "W" },
   "getable": true,

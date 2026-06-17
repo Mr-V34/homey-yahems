@@ -1,6 +1,6 @@
 {
   "type": "boolean",
-  "title": { "en": "Hot tub", "sv": "Spabad" },
+  "title": { "en": "YAHEMS · Hot tub", "sv": "YAHEMS · Spabad" },
   "titleTrue": { "en": "Allowed", "sv": "Tillåts" },
   "titleFalse": { "en": "Paused", "sv": "Pausad" },
   "uiComponent": "sensor",

@@ -1,10 +1,10 @@
 {
   "type": "number",
-  "title": { "en": "DEFCON", "sv": "DEFCON" },
+  "title": { "en": "YAHEMS · DEFCON", "sv": "YAHEMS · DEFCON" },
   "desc": { "en": "Whole-home energy status, 5 (calm) to 1 (critical peak).", "sv": "Husets energistatus, 5 (lugnt) till 1 (kritisk topp)." },
   "getable": true,
   "setable": false,
-  "uiComponent": "sensor",
+  "uiComponent": null,
   "insights": true,
   "min": 1,
   "max": 5,

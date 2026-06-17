@@ -1,6 +1,6 @@
 {
   "type": "boolean",
-  "title": { "en": "Home battery", "sv": "Husbatteri" },
+  "title": { "en": "YAHEMS · Home battery", "sv": "YAHEMS · Husbatteri" },
   "titleTrue": { "en": "Active", "sv": "Aktivt" },
   "titleFalse": { "en": "Idle", "sv": "Vilar" },
   "uiComponent": "sensor",

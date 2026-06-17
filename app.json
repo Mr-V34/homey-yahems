@@ -562,13 +562,13 @@
       },
       "class": "other",
       "capabilities": [
-        "yahems_defcon",
         "yahems_defcon_label",
+        "yahems_avg15",
+        "measure_power",
         "yahems_mode",
         "yahems_source",
-        "measure_power",
-        "yahems_avg15",
-        "yahems_fault"
+        "yahems_fault",
+        "yahems_defcon"
       ],
       "platforms": [
         "local"
@@ -593,29 +593,15 @@
         }
       ],
       "id": "controller",
-      "settings": [
-        {
-          "id": "house_meter_present",
-          "type": "checkbox",
-          "label": {
-            "en": "Real house meter connected",
-            "sv": "Riktig husmätare ansluten"
-          },
-          "hint": {
-            "en": "Switches from Advisory to Control. Keep off until YAHEMS can see real house consumption.",
-            "sv": "Växlar från Rådgivande till Styrning. Håll av tills YAHEMS ser verklig husförbrukning."
-          },
-          "value": false
-        }
-      ]
+      "settings": []
     }
   ],
   "capabilities": {
     "yahems_allow_battery": {
       "type": "boolean",
       "title": {
-        "en": "Home battery",
-        "sv": "Husbatteri"
+        "en": "YAHEMS · Home battery",
+        "sv": "YAHEMS · Husbatteri"
       },
       "titleTrue": {
         "en": "Active",
@@ -634,8 +620,8 @@
     "yahems_allow_dishwasher": {
       "type": "boolean",
       "title": {
-        "en": "Dishwasher",
-        "sv": "Diskmaskin"
+        "en": "YAHEMS · Dishwasher",
+        "sv": "YAHEMS · Diskmaskin"
       },
       "titleTrue": {
         "en": "Allowed",
@@ -654,8 +640,8 @@
     "yahems_allow_dryer": {
       "type": "boolean",
       "title": {
-        "en": "Tumble dryer",
-        "sv": "Torktumlare"
+        "en": "YAHEMS · Tumble dryer",
+        "sv": "YAHEMS · Torktumlare"
       },
       "titleTrue": {
         "en": "Allowed",
@@ -674,8 +660,8 @@
     "yahems_allow_ev": {
       "type": "boolean",
       "title": {
-        "en": "EV charger",
-        "sv": "Elbilsladdare"
+        "en": "YAHEMS · EV charger",
+        "sv": "YAHEMS · Elbilsladdare"
       },
       "titleTrue": {
         "en": "Allowed",
@@ -694,8 +680,8 @@
     "yahems_allow_nibe": {
       "type": "boolean",
       "title": {
-        "en": "Heat pump",
-        "sv": "Värmepump"
+        "en": "YAHEMS · Heat pump",
+        "sv": "YAHEMS · Värmepump"
       },
       "titleTrue": {
         "en": "Allowed",
@@ -714,8 +700,8 @@
     "yahems_allow_spa": {
       "type": "boolean",
       "title": {
-        "en": "Hot tub",
-        "sv": "Spabad"
+        "en": "YAHEMS · Hot tub",
+        "sv": "YAHEMS · Spabad"
       },
       "titleTrue": {
         "en": "Allowed",
@@ -734,8 +720,8 @@
     "yahems_allow_washer": {
       "type": "boolean",
       "title": {
-        "en": "Washing machine",
-        "sv": "Tvättmaskin"
+        "en": "YAHEMS · Washing machine",
+        "sv": "YAHEMS · Tvättmaskin"
       },
       "titleTrue": {
         "en": "Allowed",
@@ -754,8 +740,8 @@
     "yahems_avg15": {
       "type": "number",
       "title": {
-        "en": "15-min average",
-        "sv": "15-min snitt"
+        "en": "YAHEMS · 15-min average",
+        "sv": "YAHEMS · 15-min snitt"
       },
       "desc": {
         "en": "Net house power averaged over the last 15 minutes (three 5-minute sub-averages) — the figure a grid power tariff bills.",
@@ -775,8 +761,8 @@
     "yahems_defcon": {
       "type": "number",
       "title": {
-        "en": "DEFCON",
-        "sv": "DEFCON"
+        "en": "YAHEMS · DEFCON",
+        "sv": "YAHEMS · DEFCON"
       },
       "desc": {
         "en": "Whole-home energy status, 5 (calm) to 1 (critical peak).",
@@ -784,7 +770,7 @@
       },
       "getable": true,
       "setable": false,
-      "uiComponent": "sensor",
+      "uiComponent": null,
       "insights": true,
       "min": 1,
       "max": 5,
@@ -810,8 +796,8 @@
         {
           "id": "d5",
           "title": {
-            "en": "🟢 D5 · Calm",
-            "sv": "🟢 D5 · Lugnt"
+            "en": "🔵 D5 · Calm",
+            "sv": "🔵 D5 · Lugnt"
           }
         },
         {
@@ -831,15 +817,15 @@
         {
           "id": "d2",
           "title": {
-            "en": "🟠 D2 · High",
-            "sv": "🟠 D2 · Högt"
+            "en": "🔴 D2 · High",
+            "sv": "🔴 D2 · Högt"
           }
         },
         {
           "id": "d1",
           "title": {
-            "en": "🔴 D1 · Critical",
-            "sv": "🔴 D1 · Kritiskt"
+            "en": "⚪ D1 · Critical",
+            "sv": "⚪ D1 · Kritiskt"
           }
         }
       ]
@@ -847,8 +833,8 @@
     "yahems_fault": {
       "type": "boolean",
       "title": {
-        "en": "Sensor fault",
-        "sv": "Sensorfel"
+        "en": "YAHEMS · Sensor fault",
+        "sv": "YAHEMS · Sensorfel"
       },
       "uiComponent": "sensor",
       "getable": true,

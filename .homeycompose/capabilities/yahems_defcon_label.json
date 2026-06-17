@@ -7,10 +7,10 @@
   "uiComponent": "sensor",
   "insights": false,
   "values": [
-    { "id": "d5", "title": { "en": "🟢 D5 · Calm", "sv": "🟢 D5 · Lugnt" } },
+    { "id": "d5", "title": { "en": "🔵 D5 · Calm", "sv": "🔵 D5 · Lugnt" } },
     { "id": "d4", "title": { "en": "🟢 D4 · Comfortable", "sv": "🟢 D4 · Bekvämt" } },
     { "id": "d3", "title": { "en": "🟡 D3 · Caution", "sv": "🟡 D3 · Försiktigt" } },
-    { "id": "d2", "title": { "en": "🟠 D2 · High", "sv": "🟠 D2 · Högt" } },
-    { "id": "d1", "title": { "en": "🔴 D1 · Critical", "sv": "🔴 D1 · Kritiskt" } }
+    { "id": "d2", "title": { "en": "🔴 D2 · High", "sv": "🔴 D2 · Högt" } },
+    { "id": "d1", "title": { "en": "⚪ D1 · Critical", "sv": "⚪ D1 · Kritiskt" } }
   ]
 }

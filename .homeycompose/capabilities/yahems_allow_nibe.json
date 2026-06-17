@@ -1,6 +1,6 @@
 {
   "type": "boolean",
-  "title": { "en": "Heat pump", "sv": "Värmepump" },
+  "title": { "en": "YAHEMS · Heat pump", "sv": "YAHEMS · Värmepump" },
   "titleTrue": { "en": "Allowed", "sv": "Tillåts" },
   "titleFalse": { "en": "Paused", "sv": "Pausad" },
   "uiComponent": "sensor",

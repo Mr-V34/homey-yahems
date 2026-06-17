@@ -53,11 +53,15 @@ equals the first sample, so there is no warm-up gap.)
 
 ### Status indicators on the controller
 
-The controller device shows DEFCON two ways: `yahems_defcon` (the number 1–5, with an
-insight) and `yahems_defcon_label`, a colour-cued label —
-🟢 D5 · Calm, 🟢 D4 · Comfortable, 🟡 D3 · Caution, 🟠 D2 · High, 🔴 D1 · Critical.
+The controller's single on-screen DEFCON tile is `yahems_defcon_label`, a colour-cued
+label using the **official DEFCON colours** —
+🔵 D5 · Calm, 🟢 D4 · Comfortable, 🟡 D3 · Caution, 🔴 D2 · High, ⚪ D1 · Critical.
 (Homey does not expose custom tile colours per value, so the colour is carried by the
 label's emoji, which renders consistently across the app and mobile card.)
+
+The numeric `yahems_defcon` (1–5) is kept too — but hidden from the device tiles
+(`uiComponent: null`) so there is only one indicator — purely to feed its **insight
+graph** (an enum label cannot be graphed). Both update every cycle.
 
 ## Step 3 — The anchor
 
@@ -177,7 +181,9 @@ never touched.
 ## Advisory vs Control
 
 YAHEMS computes the full ladder at all times, but it will not actuate anything
-until it can see real whole-house consumption. Until the **house meter** setting
-is enabled, the controller reports `mode = advisory` (read-only). See
-[SETUP.md](SETUP.md) and [SIMULATION.md](SIMULATION.md) for how this gate and the
-sim-mode kill-switch keep the system safe before the real house exists.
+unless the **operating mode** (`op_mode`) on the App Settings page is set to **Full
+operation**. In Simulation and Advisory the controller reports `mode = advisory`
+(read-only); Full reports `mode = control`. Selecting Full is the single gate —
+there is no separate per-device meter checkbox. See [SETUP.md](SETUP.md) and
+[SIMULATION.md](SIMULATION.md) for how this gate and the sim-mode kill-switch keep
+the system safe before any actuation is wired.

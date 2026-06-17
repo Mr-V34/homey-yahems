@@ -15,11 +15,12 @@ const catalog = require('../../lib/catalog');
 // HomeyAPI on every recompute cycle and feeds them through hal.resolveSignals()
 // into decideDevices(). See lib/hal.js for the map shape and signal keys.
 //
-// ADVISORY / CONTROL GATE: functional. The `house_meter_present` device setting
-// (checked first) or map.control.house_meter_present (fallback) determines the
-// mode string written to the `yahems_mode` capability:
-//   - 'advisory'  — compute and log decisions but perform no device writes.
-//   - 'control'   — (future) allow _applyDecisions() to actuate devices.
+// OPERATING MODE: functional. The single `op_mode` app setting (chosen on the
+// settings page: Simulation / Advisory / Full operation) is the ONE source of
+// truth. It maps to the mode string written to the `yahems_mode` capability:
+//   - simulation / advisory → 'advisory' — compute and log decisions, no writes.
+//   - full                  → 'control'  — (future) allow _applyDecisions() to actuate.
+// There is no separate per-device meter checkbox; Full operation IS the gate.
 //
 // WRITES: UNWIRED AND COMPUTE-ONLY.
 // _applyDecisions() is the SOLE place where future writes would live. It
@@ -160,17 +161,14 @@ module.exports = class ControllerDevice extends Homey.Device {
    * Operating mode (the single top-level switch on the settings page):
    *   - 'simulation' — try things you don't own; never actuates; synthetic feed.
    *   - 'advisory'   — installed devices; reads Homey Energy total; never actuates.
-   *   - 'full'       — installed devices; real meter; actuation gate OPEN.
-   * Back-compat: the legacy `house_meter_present` device checkbox = 'full'.
+   *   - 'full'       — installed devices; best available house reading; actuation gate OPEN.
+   * Chosen on the settings page; the single source of truth. Defaults to 'advisory'.
    * @returns {'simulation'|'advisory'|'full'}
    */
   _opMode() {
     try {
       const v = this.homey.settings.get('op_mode');
       if (v === 'simulation' || v === 'advisory' || v === 'full') return v;
-    } catch (_) { /* fall through */ }
-    try {
-      if ((this.getSettings() || {}).house_meter_present === true) return 'full';
     } catch (_) { /* fall through */ }
     return 'advisory';
   }
@@ -387,10 +385,10 @@ module.exports = class ControllerDevice extends Homey.Device {
   }
 
   async onSettings() {
-    // The only remaining device-level setting is house_meter_present (the control
-    // gate). Everything else (device_map, matrix_override, anchor, fuse, estimate)
-    // lives in app settings and is handled by the listener in onInit. Just recompute
-    // so a meter-gate change takes effect immediately.
+    // No YAHEMS device-level settings remain — operating mode and everything else
+    // (device_map, matrix_override, anchor, fuse, price gate) live in app settings
+    // and are handled by the listener in onInit. Recompute defensively in case a
+    // built-in setting (e.g. Homey's "exclude from Energy") changed.
     await this.recompute();
   }
 
@@ -625,8 +623,8 @@ module.exports = class ControllerDevice extends Homey.Device {
         ? await this._readHomeyEnergyW()
         : null;
       if (Number.isFinite(energyW)) {
-        // Homey Energy whole-home total — real summed data. Stays advisory;
-        // unlocking control still requires a dedicated meter (house_meter_present).
+        // Homey Energy whole-home total — real summed data. Works in any mode;
+        // actuation is unlocked only by selecting Full operation (op_mode).
         consumptionW = Math.max(0, energyW);
         sourceTag = 'homey_energy';
       } else if (noMeterSource === 'off') {
