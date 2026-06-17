@@ -7,6 +7,7 @@ const hal = require('../../lib/hal');
 const simgate = require('../../lib/simgate');
 const simfeeder = require('../../lib/simfeeder');
 const catalog = require('../../lib/catalog');
+const elpris = require('../../lib/elpris');
 
 // =============================================================================
 // ACTUATION GATE — read before changing this file
@@ -57,6 +58,13 @@ module.exports = class ControllerDevice extends Homey.Device {
     this.buffer   = [];       // short rolling buffer for the responsive measure_power
     this._samples = [];       // timestamped samples for the 15-min (3×5-min) average
     this._customTitles = {};  // last title pushed to each yahems_custom_N cap (avoids churn)
+
+    // Electricity-price (elprisetjustnu.se) state — see _maybeRefreshPrices().
+    this._prices = [];               // parsed [{start,end,ore}] for today (+ tomorrow)
+    this._pricesDay = null;          // toDateString() of the last successful fetch
+    this._pricesHaveTomorrow = false;
+    this._priceFault = false;        // true once the feed gave up after retries
+    this._priceRetryAt = null;       // backoff: do not retry before this epoch ms
     this.gridW    = 0;        // fallback grid reading from flow action
     this._gridWReported = false; // true once a Report-grid-power flow value arrives
     this._lastDefcon = null;
@@ -77,7 +85,7 @@ module.exports = class ControllerDevice extends Homey.Device {
     };
 
     // Ensure required capabilities exist (including yahems_source + yahems_fault).
-    for (const c of ['yahems_defcon', 'yahems_defcon_label', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_avg15', 'yahems_fault']) {
+    for (const c of ['yahems_defcon', 'yahems_defcon_label', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_avg15', 'yahems_fault', 'yahems_price', 'yahems_price_fault']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
     }
 
@@ -109,10 +117,12 @@ module.exports = class ControllerDevice extends Homey.Device {
     // The App Settings page edits the device_map at app level. React to changes
     // immediately so the map takes effect without an app restart.
     this._onAppSettingsSet = (key) => {
-      const watched = ['device_map', 'op_mode', 'anchor', 'matrix_override', 'main_fuse_a', 'phases', 'price_gate_ore'];
+      const watched = ['device_map', 'op_mode', 'anchor', 'matrix_override', 'main_fuse_a', 'phases', 'price_gate_ore', 'price_area'];
       if (watched.includes(key)) {
         if (key === 'device_map') this._loadDeviceMap();
         if (key === 'matrix_override' || key === 'price_gate_ore') this._loadMatrix();
+        // Changing the price area invalidates the cache so the new area is fetched now.
+        if (key === 'price_area') { this._pricesDay = null; this._priceRetryAt = null; }
         this.recompute().catch(this.error);
       }
     };
@@ -365,6 +375,101 @@ module.exports = class ControllerDevice extends Homey.Device {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Electricity price (elprisetjustnu.se) — free Swedish day-ahead spot prices.
+  // ---------------------------------------------------------------------------
+
+  /** Managed delay (uses Homey's timer so it is cleaned up on unload). */
+  _delay(ms) {
+    return new Promise((resolve) => this.homey.setTimeout(resolve, ms));
+  }
+
+  /** GET + parse JSON with a hard timeout. Throws on non-200 or bad JSON. */
+  async _fetchJson(url) {
+    const ctrl = new AbortController();
+    const timer = this.homey.setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'YAHEMS (Homey)' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } finally {
+      this.homey.clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Fetch + cache today's (and best-effort tomorrow's) spot prices for the
+   * configured area, no more than needed: once the cache covers the current hour
+   * and the day has not rolled over (and tomorrow has arrived by afternoon), this
+   * is a no-op. The actual download is in _fetchPrices() with retry + fault.
+   */
+  async _maybeRefreshPrices() {
+    const area = this.homey.settings.get('price_area');
+    if (!elpris.isValidArea(area)) {
+      // No area chosen → price-from-web disabled. Clear state, no fault.
+      this._prices = [];
+      this._priceFault = false;
+      return;
+    }
+    const now = Date.now();
+    const today = new Date(now).toDateString();
+    const haveCurrent = elpris.priceAt(this._prices, now) != null;
+    const afternoon = new Date(now).getHours() >= 13;
+    const needFetch = this._pricesDay !== today || !haveCurrent
+      || (afternoon && !this._pricesHaveTomorrow);
+    if (!needFetch) return;
+    if (this._priceRetryAt && now < this._priceRetryAt) return; // in backoff window
+    await this._fetchPrices(area, now);
+  }
+
+  /**
+   * Download today's prices (required) and tomorrow's (optional — not published
+   * until ~13:00). Retries up to 5 times with increasing backoff; on final
+   * failure sets the price-feed fault (the "!" indicator), logs, notifies, and
+   * schedules a 30-minute retry. Never throws.
+   */
+  async _fetchPrices(area, now) {
+    const MAX_ATTEMPTS = 5;
+    const todayUrl = elpris.buildUrl(new Date(now), area);
+    let prices = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const parsed = elpris.parsePrices(await this._fetchJson(todayUrl));
+        if (parsed.length) { prices = parsed; break; }
+        throw new Error('empty/invalid payload');
+      } catch (err) {
+        this.log(`elpris fetch ${area} attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err.message}`);
+        if (attempt < MAX_ATTEMPTS) await this._delay(1500 * attempt); // 1.5s,3s,4.5s,6s
+      }
+    }
+
+    if (!prices) {
+      this._priceFault = true;
+      this._priceRetryAt = now + 30 * 60 * 1000; // try again in 30 min
+      const msg = `Could not reach elprisetjustnu.se for ${area} after ${MAX_ATTEMPTS} tries. `
+        + 'Price-aware control is paused until the feed returns.';
+      this.log(`[PRICE FAULT] ${msg}`);
+      if (this.homey.notifications && this.homey.notifications.createNotification) {
+        await this.homey.notifications.createNotification({ excerpt: `YAHEMS: ${msg}` }).catch(() => {});
+      }
+      return;
+    }
+
+    // Best-effort tomorrow (404 before it is published is normal — ignore).
+    let haveTomorrow = false;
+    try {
+      const t = elpris.parsePrices(await this._fetchJson(elpris.buildUrl(new Date(now + 86400000), area)));
+      if (t.length) { prices = prices.concat(t); haveTomorrow = true; }
+    } catch (_) { /* tomorrow not available yet */ }
+
+    this._prices = prices;
+    this._pricesDay = new Date(now).toDateString();
+    this._pricesHaveTomorrow = haveTomorrow;
+    this._priceFault = false;
+    this._priceRetryAt = null;
+    this.log(`elpris ${area}: ${prices.length} hourly prices cached (tomorrow=${haveTomorrow})`);
+  }
+
   /**
    * (Re)load, validate, merge, and monotonicity-check the matrix_override setting.
    *
@@ -603,6 +708,10 @@ module.exports = class ControllerDevice extends Homey.Device {
     // Operating mode drives advisory vs control. Only 'full' actuates.
     const mode = this._opMode() === 'full' ? 'control' : 'advisory';
 
+    // Refresh the day-ahead electricity price cache if due (no-op most cycles).
+    await this._maybeRefreshPrices();
+    const elprisOre = elpris.priceAt(this._prices, Date.now());
+
     // --- Build HAL snapshot if the API is available and map has inputs ---
     // DATA MINIMISATION: read ONLY the devices the user explicitly mapped, by id,
     // rather than fetching every device on the Homey. This keeps the broad
@@ -758,6 +867,13 @@ module.exports = class ControllerDevice extends Homey.Device {
     const judgedW = Number.isFinite(this._avg15) ? this._avg15 : r.average;
     const defcon = isFault ? 3 : engine.defconFromNet(judgedW, anchor);
 
+    // Effective electricity price (öre/kWh). Precedence: a mapped live price device
+    // (halSignals.priceOre) wins; otherwise the elprisetjustnu.se area feed. May be
+    // undefined (no price). Declared here so the capability write below can use it.
+    const effectivePriceOre = Number.isFinite(halSignals.priceOre)
+      ? halSignals.priceOre
+      : (Number.isFinite(elprisOre) ? elprisOre : undefined);
+
     // Update capabilities (own-capability writes — not actuation).
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);
     await this.setCapabilityValue('yahems_mode',   mode).catch(this.error);
@@ -769,6 +885,11 @@ module.exports = class ControllerDevice extends Homey.Device {
     if (Number.isFinite(this._avg15)) {
       await this.setCapabilityValue('yahems_avg15', this._avg15).catch(this.error);
     }
+    // Electricity price + feed-fault indicator. Only publish a number when known.
+    if (Number.isFinite(effectivePriceOre)) {
+      await this.setCapabilityValue('yahems_price', effectivePriceOre).catch(this.error);
+    }
+    await this.setCapabilityValue('yahems_price_fault', this._priceFault === true).catch(this.error);
 
     // House main fuse + phases (app settings) feed EV load-balancing / clamps.
     const fuseA = Number(this.homey.settings.get('main_fuse_a'));
@@ -776,12 +897,14 @@ module.exports = class ControllerDevice extends Homey.Device {
 
     // Build the full decideDevices() input: HAL signals spread in, then
     // consumption, defcon and localHour are always set explicitly.
+    // (effectivePriceOre is computed above, before the capability writes.)
     const decideInput = {
       ...halSignals,
       defcon,
       consumptionW: Math.max(0, r.average),
       localHour: new Date().getHours(),
       bigLoads: this._bigLoads(),
+      ...(effectivePriceOre != null ? { priceOre: effectivePriceOre } : {}),
       ...(Number.isFinite(fuseA) ? { mainFuseA: fuseA } : {}),
       ...(Number.isFinite(phases) ? { phases } : {}),
     };

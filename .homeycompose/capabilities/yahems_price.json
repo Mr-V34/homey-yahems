@@ -1,0 +1,12 @@
+{
+  "type": "number",
+  "title": { "en": "YAHEMS · Electricity price", "sv": "YAHEMS · Elpris" },
+  "desc": { "en": "Current spot electricity price in öre/kWh.", "sv": "Aktuellt spotpris på el i öre/kWh." },
+  "units": { "en": "öre/kWh", "sv": "öre/kWh" },
+  "getable": true,
+  "setable": false,
+  "uiComponent": "sensor",
+  "insights": true,
+  "decimals": 1,
+  "icon": "/assets/icon.svg"
+}

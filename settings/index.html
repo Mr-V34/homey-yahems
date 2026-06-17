@@ -82,6 +82,18 @@
   <div class="card"><div id="inputs"></div></div>
 
   <div class="card">
+    <label id="l-pricearea" style="display:block;margin-bottom:6px;"></label>
+    <select id="price-area">
+      <option value="">—</option>
+      <option value="SE1">SE1 — Luleå / Norra Sverige</option>
+      <option value="SE2">SE2 — Sundsvall / Norra Mellansverige</option>
+      <option value="SE3">SE3 — Stockholm / Södra Mellansverige</option>
+      <option value="SE4">SE4 — Malmö / Södra Sverige</option>
+    </select>
+    <div class="hint" id="pricearea-hint"></div>
+  </div>
+
+  <div class="card">
     <label id="l-pricegate" style="display:block;margin-bottom:6px;"></label>
     <input type="range" id="price-gate" min="0" max="500" step="5" style="width:68%;vertical-align:middle;" />
     <span id="price-gate-val" style="margin-left:8px;font-weight:bold;"></span>
@@ -245,12 +257,18 @@
         o[2].textContent = t('Full operation — read meter & control devices', 'Full drift — läs mätare & styr enheter');
       })();
       document.getElementById('op-mode').addEventListener('change', function () { OPMODE = this.value; updateModeUI(); });
+      document.getElementById('l-pricearea').textContent = t(
+        'Electricity price area (elprisetjustnu.se)',
+        'Elprisområde (elprisetjustnu.se)');
+      document.getElementById('pricearea-hint').textContent = t(
+        'Pick the area where you live to fetch today’s and tomorrow’s prices (öre/kWh) once a day from the free elprisetjustnu.se service. Leave empty if you map your own price device (e.g. Tibber), which takes priority. If the service can’t be reached the price-fault indicator lights and it retries.',
+        'Välj området där du bor för att hämta dagens och morgondagens priser (öre/kWh) en gång per dygn från gratistjänsten elprisetjustnu.se. Lämna tomt om du mappar en egen prisenhet (t.ex. Tibber), som har företräde. Om tjänsten inte kan nås tänds prisfel-indikatorn och den försöker igen.');
       document.getElementById('l-pricegate').textContent = t(
         'Price sensitivity — hold big loads above:',
         'Priskänslighet — håll storförbrukare över:');
       document.getElementById('pricegate-hint').textContent = t(
-        'Drag from cheap to expensive. Devices ticked as “big load” are held back when the mapped electricity price is above this threshold. Needs a mapped price device to act.',
-        'Dra från billigt till dyrt. Enheter som bockats som ”storförbrukare” hålls tillbaka när det mappade elpriset är över denna tröskel. Kräver en mappad prisenhet för att verka.');
+        'Drag from cheap to expensive. Devices ticked as “big load” are held back when the electricity price (mapped device or the price area above) is over this threshold.',
+        'Dra från billigt till dyrt. Enheter som bockats som ”storförbrukare” hålls tillbaka när elpriset (mappad enhet eller prisområdet ovan) är över denna tröskel.');
       (function () {
         var pg = document.getElementById('price-gate');
         var pv = document.getElementById('price-gate-val');
@@ -271,7 +289,7 @@
         apiGet(Homey, '/signals'), apiGet(Homey, '/devices'), apiGet(Homey, '/catalog'), apiGet(Homey, '/levels'),
         get(Homey, 'device_map'), get(Homey, 'op_mode'),
         get(Homey, 'anchor'), get(Homey, 'main_fuse_a'), get(Homey, 'phases'),
-        get(Homey, 'price_gate_ore'),
+        get(Homey, 'price_gate_ore'), get(Homey, 'price_area'),
       ]).then(function (r) {
         SIGNALS = r[0] || []; DEVICES = r[1] || []; CATALOG = r[2] || []; LEVELS = r[3] || null;
         existingMap = parseMap(r[4]);
@@ -288,6 +306,10 @@
           var pg = document.getElementById('price-gate');
           pg.value = numOr(r[9], 300);
           pg._show();
+        })();
+        (function () {
+          var pa = ['SE1', 'SE2', 'SE3', 'SE4'].indexOf(r[10]) !== -1 ? r[10] : '';
+          document.getElementById('price-area').value = pa;
         })();
         computeOwned();
         renderInputs(); renderDevices(); renderCustom(); renderLevels();
@@ -599,6 +621,7 @@
           set(Homey, 'main_fuse_a', fuse),
           set(Homey, 'phases', phases),
           set(Homey, 'price_gate_ore', Number(document.getElementById('price-gate').value) || 300),
+          set(Homey, 'price_area', document.getElementById('price-area').value || ''),
           set(Homey, 'matrix_override', JSON.stringify(override)),
         ]).then(function () {
           existingMap = map;

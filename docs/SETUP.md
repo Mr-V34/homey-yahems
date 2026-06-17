@@ -156,20 +156,29 @@ The **Configure** page is organised top-down so a non-technical user can set it 
    current — a 25 A fuse forbids selecting 32 A).
 3. **Inputs (sensors)** — all optional. Grid power and house consumption list only
    whole-home meters (leave empty in an apartment); electricity price (öre/kWh).
-4. **Price sensitivity slider** — sets the öre/kWh threshold above which any device
-   ticked as a **big load** (*Storförbrukare*) is held back (needs a mapped price device).
-5. **Your devices** — grouped by the taxonomy (Climate, Energy, EV, Appliances,
+4. **Electricity price area** — pick **SE1–SE4** (where you live) to fetch today's and
+   tomorrow's spot prices once a day from the free **elprisetjustnu.se** service (no
+   account needed). Leave empty if you map your own price device (e.g. Tibber) — a
+   mapped device takes priority. The current price is published as `yahems_price`
+   (öre/kWh, with an insight); if the service can't be reached YAHEMS retries up to 5×
+   with backoff, then lights `yahems_price_fault` ("!") and logs/notifies, retrying
+   every 30 min. The day-ahead feed is 15-minute resolution; YAHEMS uses whichever
+   window covers the current time.
+5. **Price sensitivity slider** — sets the öre/kWh threshold above which any device
+   ticked as a **big load** (*Storförbrukare*) is held back (uses the mapped price
+   device or the price area above).
+6. **Your devices** — grouped by the taxonomy (Climate, Energy, EV, Appliances,
    Cooking). Each device row lets you pick *your* device (the dropdown is filtered to
    the relevant type — a charger row lists only chargers), or **Not installed**, or
    **Simulate** (only in Simulation mode). A **Big load** checkbox (on heat pump, spa,
    EV, white goods) opts the device into the price slider. Picking a device reveals
    capability sub-pickers for that device's functions.
-6. **Your own consumers** — add custom loads (pausable or monitor-only). Each one gets
+7. **Your own consumers** — add custom loads (pausable or monitor-only). Each one gets
    its own **YAHEMS status insight on the controller**, named after the consumer so it
    lines up with the overview (allowed/paused; monitor-only stays "allowed"). Up to 8
    custom consumers get a controller-side insight tile; any beyond that still appear in
    the overview.
-7. **How YAHEMS controls each level** — an **editable** table (D5→D1) of setpoints per
+8. **How YAHEMS controls each level** — an **editable** table (D5→D1) of setpoints per
    device, with a live read-out of how the power limit splits across the DEFCON bands.
    You change the defaults (e.g. spa off on D3–D1); contradictory schedules are
    auto-rejected, keeping the last safe values. "Not installed" devices are hidden here.
