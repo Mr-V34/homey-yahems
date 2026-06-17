@@ -13,8 +13,8 @@
     "sv": "DEFCON-energistyrning — sänk elräkningen, sömlöst."
   },
   "tags": {
-    "en": ["energy", "battery", "solar", "ev charging", "peak", "defcon", "tariff"],
-    "sv": ["energi", "batteri", "sol", "elbil", "effekt", "tariff"]
+    "en": ["energy", "battery", "solar", "ev charging", "peak shaving", "spot price", "tariff", "defcon"],
+    "sv": ["energi", "batteri", "solceller", "elbilsladdning", "effekttoppar", "spotpris", "tariff", "defcon"]
   },
   "category": "energy",
   "brandColor": "#F2600C",
@@ -38,5 +38,12 @@
   "source": "https://github.com/Mr-V34/homey-yahems",
   "homepage": "https://www.v34.com",
   "support": "mailto:info@v34.com",
-  "permissions": ["homey:manager:api"]
+  "permissions": ["homey:manager:api"],
+  "api": {
+    "getDevices": { "method": "get", "path": "/devices" },
+    "getSignals": { "method": "get", "path": "/signals" },
+    "getLevels": { "method": "get", "path": "/levels" },
+    "getCatalog": { "method": "get", "path": "/catalog" },
+    "getStatus": { "method": "get", "path": "/status" }
+  }
 }

@@ -22,11 +22,49 @@ the grid, the net number is negative.
 
 A single reading is noisy — a kettle switching on should not flip the whole house
 to a critical peak. Each new sample is pushed into a small rolling buffer and the
-**average of the last 3 samples** is what the ladder actually judges.
+**average of the last 3 samples** is what the ladder actually judges. This short
+average is published as the controller's `measure_power` ("Now").
 
 ```js
 const r = engine.rollingAverage(buffer, sample, 3); // { buffer, average }
 ```
+
+### The 7.5-minute average (`yahems_avg`)
+
+Separately, YAHEMS tracks a **7.5-minute rolling average** of net house power —
+half the grid's quarter-hour (15-min) billing window. This keeps the system *awake*:
+it tracks a building load quickly and reacts roughly twice as fast as a full 15-min
+window would, while still smoothing the 60-second instantaneous spikes that would
+otherwise make the level flap. It is built from timestamped samples (not a fixed
+buffer), so it stays correct whatever the recompute cadence is.
+
+```js
+samples = engine.pushSample(samples, watts, Date.now()); // prunes > 7.5 min old
+const avg = engine.windowAverage(samples, Date.now());   // rolling 7.5-min mean (or null while cold)
+```
+
+`yahems_avg` has its **own YAHEMS insight** (graph) and the value appears on the
+overview/status page. **The DEFCON ladder judges this 7.5-min average** — responsive
+but not jittery. The short `measure_power` average is the live "Now" reading shown
+alongside it. (Before the window has data, the 7.5-min average already equals the
+first sample, so there is no warm-up gap.)
+
+> **Hysteresis:** there is deliberately **no deadband** on the level today — the
+> 7.5-min window is the only smoothing. If a load proves to start/stop too often in
+> practice, a band-edge deadband (e.g. ~10 %) is a planned follow-up (see the
+> roadmap).
+
+### Status indicators on the controller
+
+The controller's single on-screen DEFCON tile is `yahems_defcon_label`, a colour-cued
+label using the **official DEFCON colours** —
+🔵 D5 · Producing, 🟢 D4 · Low, 🟡 D3 · Medium, 🔴 D2 · High, ⚪ D1 · Critical.
+(Homey does not expose custom tile colours per value, so the colour is carried by the
+label's emoji, which renders consistently across the app and mobile card.)
+
+The numeric `yahems_defcon` (1–5) is kept too — but hidden from the device tiles
+(`uiComponent: null`) so there is only one indicator — purely to feed its **insight
+graph** (an enum label cannot be graphed). Both update every cycle.
 
 ## Step 3 — The anchor
 
@@ -42,11 +80,11 @@ the *calmer* level. Export or near-zero net is always DEFCON 5.
 
 | Level | Condition (averaged net import) | Meaning |
 |------:|---------------------------------|---------|
-| **5** | `net ≤ 5 W` (export / near zero) | Surplus — use and store everything |
-| **4** | `net ≤ anchor / 3` | Comfortable |
-| **3** | `net ≤ 2 × anchor / 3` | Watchful |
-| **2** | `net ≤ anchor` | Backing off |
-| **1** | `net > anchor` | Critical peak — shed load |
+| **5** | `net ≤ 5 W` (export / near zero) | Producing — own surplus; burn energy (charge EV, heat spa) |
+| **4** | `net ≤ anchor / 3` | Low — green light for scheduled heavy loads |
+| **3** | `net ≤ 2 × anchor / 3` | Medium — normal; devices run without restriction |
+| **2** | `net ≤ anchor` | High — throttle or pause flexible loads |
+| **1** | `net > anchor` | Critical — shed everything but essential operation |
 
 Worked example with the default anchor of **4500 W** (bands at 1500 / 3000 / 4500):
 
@@ -75,8 +113,15 @@ without touching logic. Missing signals fall back to safe defaults.
 | **Spa (Balboa)** | 38 °C heat | 38 °C heat | 36 °C heat | 36 °C heat | pump on, **heat off** |
 | **EV (Zaptec)** | 32 A | 32 A | 16 A | 10 A | 0 A |
 | **Battery (Dyness TP7)** | charge 100 % | charge 50 % | discharge | discharge | discharge |
-| **Appliances** | run | run | run | pause | pause |
+| **Dishwasher** | run | run | run | run | pause |
+| **Washing machine** | run | run | run | pause | pause |
+| **Tumble dryer** | run | run | pause | pause | pause |
 | **Comfort loads** | allow | allow | allow | allow | allow |
+
+White goods are three independent devices (dryer pauses earliest), each with its own
+high-power threshold. These are the built-in defaults — every cell is editable on the
+App Settings page. The status colours follow the official DEFCON scale: **5 blue, 4
+green, 3 yellow, 2 red, 1 white.**
 
 Two invariants hold in **every** band, including D1:
 - **Frost protection never turns off.** The heat pump's `vv` stays ≥ 40 °C and its
@@ -117,6 +162,17 @@ The battery has three SOC guard rails, checked against the band's intent:
 | Reserve | 15 % | On a discharge band, stop supporting the house (protect reserve) |
 | Safety | 5 % | Idle, and veto EV charging |
 
+### "Storförbrukare" (big-load) price hold
+
+Any controlled device the user ticks as a **big load** follows the price slider.
+When a live electricity price is mapped and exceeds the slider threshold
+(`matrix.ev.gateOre`), that device is evaluated at its **critical (D1) band** —
+its most conservative, frost-safe setpoint — regardless of the house DEFCON:
+the heat pump drops to its hot-water/frost floor, the spa's electric heat goes off
+(circulation pump stays on), white goods pause, and the EV holds (its existing
+confirm flow). A **boost always wins** — issuing a boost means "I'll pay to run it
+now." The home battery is never a big load; it keeps its own SoC/price logic.
+
 ### Appliance high-power pause
 
 At D2/D1, if a high-power appliance measurement is present and exceeds the
@@ -128,7 +184,9 @@ never touched.
 ## Advisory vs Control
 
 YAHEMS computes the full ladder at all times, but it will not actuate anything
-until it can see real whole-house consumption. Until the **house meter** setting
-is enabled, the controller reports `mode = advisory` (read-only). See
-[SETUP.md](SETUP.md) and [SIMULATION.md](SIMULATION.md) for how this gate and the
-sim-mode kill-switch keep the system safe before the real house exists.
+unless the **operating mode** (`op_mode`) on the App Settings page is set to **Full
+operation**. In Simulation and Advisory the controller reports `mode = advisory`
+(read-only); Full reports `mode = control`. Selecting Full is the single gate —
+there is no separate per-device meter checkbox. See [SETUP.md](SETUP.md) and
+[SIMULATION.md](SIMULATION.md) for how this gate and the sim-mode kill-switch keep
+the system safe before any actuation is wired.

@@ -64,9 +64,12 @@ test/selftest.js   auto-discovers and runs every lib/*.js selfTest()
 
 ## Roadmap
 
-Direct device reads via homey-api, price + solar-forecast prediction, the settings
-UI for the placeholder map, and wiring the actuation gate so the matrix actually
-drives devices once a real house meter is present. Final app icon and store
+Direct device reads via homey-api ✓, a friendly App Settings device-map builder ✓
+(with a no-meter advisory estimate so it runs without a P1/energy dongle), and a
+responsive **7.5-minute** measurement driving DEFCON ✓. Next: selectable billing type
+(15 min / hour / fixed), optional DEFCON hysteresis, price-aware battery (charge cheap
+/ sell expensive), and wiring the actuation gate so the matrix actually drives devices.
+See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full plan. Final app icon and store
 imagery still to be designed to App Store spec.
 
 Author: Peter Persson · Co-author: B.Frank

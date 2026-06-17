@@ -5,6 +5,9 @@ const engine = require('../../lib/engine');
 const matrix = require('../../lib/matrix');
 const hal = require('../../lib/hal');
 const simgate = require('../../lib/simgate');
+const simfeeder = require('../../lib/simfeeder');
+const catalog = require('../../lib/catalog');
+const elpris = require('../../lib/elpris');
 
 // =============================================================================
 // ACTUATION GATE — read before changing this file
@@ -13,11 +16,12 @@ const simgate = require('../../lib/simgate');
 // HomeyAPI on every recompute cycle and feeds them through hal.resolveSignals()
 // into decideDevices(). See lib/hal.js for the map shape and signal keys.
 //
-// ADVISORY / CONTROL GATE: functional. The `house_meter_present` device setting
-// (checked first) or map.control.house_meter_present (fallback) determines the
-// mode string written to the `yahems_mode` capability:
-//   - 'advisory'  — compute and log decisions but perform no device writes.
-//   - 'control'   — (future) allow _applyDecisions() to actuate devices.
+// OPERATING MODE: functional. The single `op_mode` app setting (chosen on the
+// settings page: Simulation / Advisory / Full operation) is the ONE source of
+// truth. It maps to the mode string written to the `yahems_mode` capability:
+//   - simulation / advisory → 'advisory' — compute and log decisions, no writes.
+//   - full                  → 'control'  — (future) allow _applyDecisions() to actuate.
+// There is no separate per-device meter checkbox; Full operation IS the gate.
 //
 // WRITES: UNWIRED AND COMPUTE-ONLY.
 // _applyDecisions() is the SOLE place where future writes would live. It
@@ -51,8 +55,18 @@ const MAX_PLAUSIBLE_W = 30000;
 module.exports = class ControllerDevice extends Homey.Device {
 
   async onInit() {
-    this.buffer   = [];
+    this.buffer   = [];       // short rolling buffer for the responsive measure_power
+    this._samples = [];       // timestamped samples for the 7.5-min rolling average
+    this._customTitles = {};  // last title pushed to each yahems_custom_N cap (avoids churn)
+
+    // Electricity-price (elprisetjustnu.se) state — see _maybeRefreshPrices().
+    this._prices = [];               // parsed [{start,end,ore}] for today (+ tomorrow)
+    this._pricesDay = null;          // toDateString() of the last successful fetch
+    this._pricesHaveTomorrow = false;
+    this._priceFault = false;        // true once the feed gave up after retries
+    this._priceRetryAt = null;       // backoff: do not retry before this epoch ms
     this.gridW    = 0;        // fallback grid reading from flow action
+    this._gridWReported = false; // true once a Report-grid-power flow value arrives
     this._lastDefcon = null;
     this._decisions  = null;
     this._api        = null;  // HomeyAPI instance (null if unavailable)
@@ -70,9 +84,15 @@ module.exports = class ControllerDevice extends Homey.Device {
       consumptionW: { value: null, lastChangedAt: null },
     };
 
-    // Ensure required capabilities exist (including the new yahems_fault).
-    for (const c of ['yahems_defcon', 'yahems_mode', 'measure_power', 'yahems_fault']) {
+    // Ensure required capabilities exist (including yahems_source + yahems_fault).
+    for (const c of ['yahems_defcon', 'yahems_defcon_label', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_avg', 'yahems_fault', 'yahems_price', 'yahems_price_fault']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
+    }
+
+    // Remove retired capabilities (and their stale insight series) from devices
+    // paired before a rename. yahems_avg15 → yahems_avg (15-min → 7.5-min average).
+    for (const c of ['yahems_avg15']) {
+      if (this.hasCapability(c)) await this.removeCapability(c).catch(this.error);
     }
 
     // Guard: DEFAULT_MATRIX must always be monotone. Log if it ever isn't
@@ -100,6 +120,24 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._loadDeviceMap();
     this._loadMatrix();
 
+    // The App Settings page edits the device_map at app level. React to changes
+    // immediately so the map takes effect without an app restart.
+    this._onAppSettingsSet = (key) => {
+      const watched = ['device_map', 'op_mode', 'anchor', 'matrix_override', 'main_fuse_a', 'phases', 'price_gate_ore', 'price_area'];
+      if (watched.includes(key)) {
+        if (key === 'device_map') this._loadDeviceMap();
+        if (key === 'matrix_override' || key === 'price_gate_ore') this._loadMatrix();
+        // Changing the price area invalidates the cache so the new area is fetched now.
+        if (key === 'price_area') { this._pricesDay = null; this._priceRetryAt = null; }
+        this.recompute().catch(this.error);
+      }
+    };
+    try {
+      this.homey.settings.on('set', this._onAppSettingsSet);
+    } catch (err) {
+      this.log(`could not subscribe to app settings changes: ${err.message}`);
+    }
+
     // Periodic recompute (every 60 s) plus an immediate run.
     this._interval = this.homey.setInterval(() => this.recompute().catch(this.error), 60000);
     await this.recompute();
@@ -110,14 +148,330 @@ module.exports = class ControllerDevice extends Homey.Device {
   // Settings helpers
   // ---------------------------------------------------------------------------
 
-  /** (Re)load and validate the device_map setting. Logs validation errors. */
+  /**
+   * (Re)load and validate the device_map. Logs validation errors.
+   *
+   * The map is owned by the App Settings page and stored in app-level
+   * ManagerSettings (key `device_map`). For backward compatibility a non-empty
+   * device-level `device_map` setting (the legacy textarea) is still honoured as
+   * a fallback when no app-level map exists.
+   */
   _loadDeviceMap() {
-    const raw = (this.getSettings() || {}).device_map || '';
+    let raw = '';
+    try {
+      raw = this.homey.settings.get('device_map') || '';
+    } catch (_) {
+      raw = '';
+    }
+    if (!raw) {
+      // Legacy fallback: device-level textarea (pre-settings-page installs).
+      raw = (this.getSettings() || {}).device_map || '';
+    }
     const { ok, map, errors } = hal.validateMap(raw);
     if (!ok) {
       this.log(`device_map validation errors — using empty map: ${errors.join('; ')}`);
     }
     this._deviceMap = map;
+  }
+
+  /**
+   * Operating mode (the single top-level switch on the settings page):
+   *   - 'simulation' — try things you don't own; never actuates; synthetic feed.
+   *   - 'advisory'   — installed devices; reads Homey Energy total; never actuates.
+   *   - 'full'       — installed devices; best available house reading; actuation gate OPEN.
+   * Chosen on the settings page; the single source of truth. Defaults to 'advisory'.
+   * @returns {'simulation'|'advisory'|'full'}
+   */
+  _opMode() {
+    try {
+      const v = this.homey.settings.get('op_mode');
+      if (v === 'simulation' || v === 'advisory' || v === 'full') return v;
+    } catch (_) { /* fall through */ }
+    return 'advisory';
+  }
+
+  /**
+   * Which fallback source to use when no real meter/flow signal is mapped.
+   * Derived from the operating mode:
+   *   - simulation → 'estimate' (synthetic season-aware model)
+   *   - advisory / full → 'homey_energy' (real aggregated total; auto-falls back
+   *     to the estimate inside the precedence if the report is unavailable).
+   * @returns {'homey_energy'|'estimate'}
+   */
+  _noMeterSource() {
+    return this._opMode() === 'simulation' ? 'estimate' : 'homey_energy';
+  }
+
+  /**
+   * Build the big-load ("Storförbrukare") set for the matrix, mapping each
+   * controlled subgroup the user flagged onto its matrix key (heatpump→nibe …).
+   * @returns {object} e.g. { ev: true, spa: true }
+   */
+  _bigLoads() {
+    const out = {};
+    const controls = (this._deviceMap && this._deviceMap.controls) || {};
+    for (const sg of catalog.subgroups()) {
+      if (!sg.matrixKey) continue;
+      const c = controls[sg.key];
+      if (c && c.bigLoad === true) out[sg.matrixKey] = true;
+    }
+    return out;
+  }
+
+  /**
+   * Show one status tile per CONFIGURED consumer on the device page, by adding a
+   * `yahems_allow_<matrixKey>` boolean capability for each installed/simulated
+   * controlled device and removing it when the device is "Not installed". The
+   * capability value is the allowed/paused state from the latest decisions.
+   * Capabilities are only added/removed on change (hasCapability guards churn).
+   */
+  async _syncStatusCapabilities() {
+    const controls = (this._deviceMap && this._deviceMap.controls) || {};
+    const d = this._decisions || {};
+    for (const sg of catalog.subgroups()) {
+      if (!sg.matrixKey) continue;
+      const cap = `yahems_allow_${sg.matrixKey}`;
+      const c = controls[sg.key];
+      const configured = c && c.presence !== 'absent';
+      if (configured) {
+        if (!this.hasCapability(cap)) await this.addCapability(cap).catch(this.error);
+        const st = this._decisionStatus(sg.matrixKey, d[sg.matrixKey]);
+        await this.setCapabilityValue(cap, st.allowed).catch(this.error);
+      } else if (this.hasCapability(cap)) {
+        await this.removeCapability(cap).catch(this.error);
+      }
+    }
+  }
+
+  /**
+   * Show one status tile + insight per CUSTOM consumer ("Egna förbrukare") the user
+   * added on the settings page, mirroring the overview's allowed/paused state. These
+   * have arbitrary user names, so a fixed pool of generic capabilities
+   * (yahems_custom_1..N) is renamed at runtime via setCapabilityOptions so the tile
+   * AND the insight carry the consumer's own name — keeping them correlated with the
+   * overview. Slots beyond the configured count are removed. Up to MAX_CUSTOM_TILES.
+   */
+  async _syncCustomCapabilities() {
+    const customs = (this._deviceMap && this._deviceMap.custom) || [];
+    const defcon = Number(this.getCapabilityValue('yahems_defcon'));
+    const d = Number.isFinite(defcon) ? defcon : 3;
+    for (let i = 0; i < ControllerDevice.MAX_CUSTOM_TILES; i++) {
+      const cap = `yahems_custom_${i + 1}`;
+      const cu = customs[i];
+      if (cu) {
+        if (!this.hasCapability(cap)) await this.addCapability(cap).catch(this.error);
+        // Title = the consumer's own name (matches the overview). Only push on change.
+        const name = (cu.name || `Consumer ${i + 1}`).toString().slice(0, 60);
+        const title = `YAHEMS · ${name}`;
+        if (this._customTitles[cap] !== title) {
+          await this.setCapabilityOptions(cap, { title }).catch(this.error);
+          this._customTitles[cap] = title;
+        }
+        // Same rule as getStatusSnapshot: pausable customs are held back below DEFCON 3,
+        // monitor-only customs are always "allowed" (just watched).
+        const allowed = cu.mode === 'pausable' ? d >= 3 : true;
+        await this.setCapabilityValue(cap, allowed).catch(this.error);
+      } else if (this.hasCapability(cap)) {
+        await this.removeCapability(cap).catch(this.error);
+        delete this._customTitles[cap];
+      }
+    }
+  }
+
+  /**
+   * Live per-consumer overview for the settings page. Maps the latest decisions
+   * (this._decisions) onto allowed/paused + a compact detail per configured device,
+   * plus custom consumers. Pure read of cached state — no API calls, no writes.
+   */
+  getStatusSnapshot() {
+    const d = this._decisions || {};
+    const controls = (this._deviceMap && this._deviceMap.controls) || {};
+    const out = {
+      mode: this.getCapabilityValue('yahems_mode'),
+      defcon: this.getCapabilityValue('yahems_defcon'),
+      source: this.getCapabilityValue('yahems_source'),
+      power: this.getCapabilityValue('measure_power'),
+      // 7.5-min rolling average — the figure DEFCON is judged on.
+      avg: Number.isFinite(this._avg) ? this._avg : null,
+      devices: [],
+      custom: [],
+    };
+    const defcon = Number.isFinite(out.defcon) ? out.defcon : 3;
+    for (const sg of catalog.subgroups()) {
+      if (!sg.matrixKey) continue;
+      const c = controls[sg.key];
+      if (!c || c.presence === 'absent') continue;
+      const st = this._decisionStatus(sg.matrixKey, d[sg.matrixKey]);
+      out.devices.push({
+        labelEn: sg.labelEn,
+        labelSv: sg.labelSv,
+        presence: c.presence,
+        bigLoad: c.bigLoad === true,
+        allowed: st.allowed,
+        detail: st.detail,
+      });
+    }
+    for (const cu of (this._deviceMap.custom || [])) {
+      const pausable = cu.mode === 'pausable';
+      // Pausable customs are held back at a peak (DEFCON 2/1); monitor-only are
+      // just watched. (No per-custom threshold yet — sensible default.)
+      const allowed = pausable ? defcon >= 3 : true;
+      out.custom.push({
+        name: cu.name || 'Consumer',
+        mode: cu.mode || 'monitor',
+        allowed,
+        detail: pausable ? (allowed ? 'run' : 'pause') : 'monitor',
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Map one device's decision to { allowed, detail }. `detail` is compact and
+   * mostly numeric/unit; flag tags (price/boost) are appended when present.
+   */
+  _decisionStatus(key, dec) {
+    if (!dec) return { allowed: true, detail: '—' };
+    const flags = dec.flags || [];
+    const tags = [];
+    if (dec.priceHold || flags.includes('price-hold')) tags.push('price');
+    if (dec.boosted || flags.includes('boosted')) tags.push('boost');
+    const suffix = tags.length ? ` [${tags.join(',')}]` : '';
+    switch (key) {
+      case 'ev': return { allowed: dec.amp > 0, detail: `${dec.amp} A${suffix}` };
+      case 'spa': return { allowed: dec.heat === true, detail: `${dec.temp}°C${suffix}` };
+      case 'nibe': return { allowed: true, detail: `vv ${dec.vv}°C${suffix}` };
+      case 'battery': return { allowed: dec.mode !== 'idle', detail: `${dec.mode}${suffix}` };
+      case 'dishwasher':
+      case 'washer':
+      case 'dryer': return { allowed: dec.action === 'run', detail: `${dec.action}${suffix}` };
+      default: return { allowed: true, detail: '—' };
+    }
+  }
+
+  /**
+   * Read Homey Energy's aggregated whole-home live total as net house watts.
+   * Homey already sums every device's measure_power, so this is real data, not a
+   * guess. Returns null if the API is unavailable or the report has no usable
+   * figure, so the caller can fall through to the synthetic estimate.
+   * @returns {Promise<number|null>}
+   */
+  async _readHomeyEnergyW() {
+    if (this._api == null || this._api.energy == null) return null;
+    try {
+      const report = await this._api.energy.getLiveReport({});
+      if (!this._loggedLiveReport) {
+        // One-time shape confirmation on the real Homey (field names vary by fw).
+        this.log(`Homey Energy live report sample: ${JSON.stringify(report).slice(0, 300)}`);
+        this._loggedLiveReport = true;
+      }
+      const gross = simfeeder.houseNetFromLiveReport(report);
+      if (!Number.isFinite(gross)) return null;
+      // Homey Energy counts THIS controller's own measure_power in the total
+      // (it appears as a load like any other device). Subtract our own current
+      // contribution so we never feed our reading back into itself — otherwise
+      // the value would compound every cycle. This settles at the real house draw.
+      const own = Number(this.getCapabilityValue('measure_power')) || 0;
+      return Math.max(0, gross - own);
+    } catch (err) {
+      this.log(`Homey Energy live report read failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Electricity price (elprisetjustnu.se) — free Swedish day-ahead spot prices.
+  // ---------------------------------------------------------------------------
+
+  /** Managed delay (uses Homey's timer so it is cleaned up on unload). */
+  _delay(ms) {
+    return new Promise((resolve) => this.homey.setTimeout(resolve, ms));
+  }
+
+  /** GET + parse JSON with a hard timeout. Throws on non-200 or bad JSON. */
+  async _fetchJson(url) {
+    const ctrl = new AbortController();
+    const timer = this.homey.setTimeout(() => ctrl.abort(), 10000);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'YAHEMS (Homey)' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } finally {
+      this.homey.clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Fetch + cache today's (and best-effort tomorrow's) spot prices for the
+   * configured area, no more than needed: once the cache covers the current hour
+   * and the day has not rolled over (and tomorrow has arrived by afternoon), this
+   * is a no-op. The actual download is in _fetchPrices() with retry + fault.
+   */
+  async _maybeRefreshPrices() {
+    const area = this.homey.settings.get('price_area');
+    if (!elpris.isValidArea(area)) {
+      // No area chosen → price-from-web disabled. Clear state, no fault.
+      this._prices = [];
+      this._priceFault = false;
+      return;
+    }
+    const now = Date.now();
+    const today = new Date(now).toDateString();
+    const haveCurrent = elpris.priceAt(this._prices, now) != null;
+    const afternoon = new Date(now).getHours() >= 13;
+    const needFetch = this._pricesDay !== today || !haveCurrent
+      || (afternoon && !this._pricesHaveTomorrow);
+    if (!needFetch) return;
+    if (this._priceRetryAt && now < this._priceRetryAt) return; // in backoff window
+    await this._fetchPrices(area, now);
+  }
+
+  /**
+   * Download today's prices (required) and tomorrow's (optional — not published
+   * until ~13:00). Retries up to 5 times with increasing backoff; on final
+   * failure sets the price-feed fault (the "!" indicator), logs, notifies, and
+   * schedules a 30-minute retry. Never throws.
+   */
+  async _fetchPrices(area, now) {
+    const MAX_ATTEMPTS = 5;
+    const todayUrl = elpris.buildUrl(new Date(now), area);
+    let prices = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const parsed = elpris.parsePrices(await this._fetchJson(todayUrl));
+        if (parsed.length) { prices = parsed; break; }
+        throw new Error('empty/invalid payload');
+      } catch (err) {
+        this.log(`elpris fetch ${area} attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err.message}`);
+        if (attempt < MAX_ATTEMPTS) await this._delay(1500 * attempt); // 1.5s,3s,4.5s,6s
+      }
+    }
+
+    if (!prices) {
+      this._priceFault = true;
+      this._priceRetryAt = now + 30 * 60 * 1000; // try again in 30 min
+      const msg = `Could not reach elprisetjustnu.se for ${area} after ${MAX_ATTEMPTS} tries. `
+        + 'Price-aware control is paused until the feed returns.';
+      this.log(`[PRICE FAULT] ${msg}`);
+      if (this.homey.notifications && this.homey.notifications.createNotification) {
+        await this.homey.notifications.createNotification({ excerpt: `YAHEMS: ${msg}` }).catch(() => {});
+      }
+      return;
+    }
+
+    // Best-effort tomorrow (404 before it is published is normal — ignore).
+    let haveTomorrow = false;
+    try {
+      const t = elpris.parsePrices(await this._fetchJson(elpris.buildUrl(new Date(now + 86400000), area)));
+      if (t.length) { prices = prices.concat(t); haveTomorrow = true; }
+    } catch (_) { /* tomorrow not available yet */ }
+
+    this._prices = prices;
+    this._pricesDay = new Date(now).toDateString();
+    this._pricesHaveTomorrow = haveTomorrow;
+    this._priceFault = false;
+    this._priceRetryAt = null;
+    this.log(`elpris ${area}: ${prices.length} hourly prices cached (tomorrow=${haveTomorrow})`);
   }
 
   /**
@@ -131,7 +485,11 @@ module.exports = class ControllerDevice extends Homey.Device {
    *   On success, this._matrix is updated to the merged+clamped matrix.
    */
   _loadMatrix() {
-    const raw = (this.getSettings() || {}).matrix_override || '{}';
+    // matrix_override is owned by the settings page (app settings). Fall back to a
+    // legacy device-level value, then to {} (built-in defaults).
+    let raw;
+    try { raw = this.homey.settings.get('matrix_override'); } catch (_) { raw = null; }
+    if (!raw) raw = (this.getSettings() || {}).matrix_override || '{}';
 
     // Step 1: validate override shape + parse.
     const { ok: parseOk, override, errors: parseErrors } = matrix.validateMatrixOverride(raw);
@@ -156,18 +514,26 @@ module.exports = class ControllerDevice extends Homey.Device {
       return; // keep this._matrix as-is
     }
 
+    // Apply the user's price-gate slider: the öre/kWh threshold above which
+    // expensive loads (EV charging) are held pending confirmation. This is a
+    // single instrument, independent of the per-band level table. `merged` is a
+    // deep clone (mergeMatrix uses JSON round-trip), so mutating it is safe.
+    let gate;
+    try { gate = Number(this.homey.settings.get('price_gate_ore')); } catch (_) { gate = NaN; }
+    if (Number.isFinite(gate) && merged.ev) {
+      merged.ev.gateOre = Math.max(0, Math.min(10000, Math.round(gate)));
+    }
+
     // All checks passed: adopt the merged matrix.
     this._matrix = merged;
     this.log('matrix_override applied successfully');
   }
 
-  async onSettings({ changedKeys }) {
-    if (changedKeys.includes('device_map')) {
-      this._loadDeviceMap();
-    }
-    if (changedKeys.some((k) => k === 'matrix_override')) {
-      this._loadMatrix();
-    }
+  async onSettings() {
+    // No YAHEMS device-level settings remain — operating mode and everything else
+    // (device_map, matrix_override, anchor, fuse, price gate) live in app settings
+    // and are handled by the listener in onInit. Recompute defensively in case a
+    // built-in setting (e.g. Homey's "exclude from Energy") changed.
     await this.recompute();
   }
 
@@ -178,13 +544,16 @@ module.exports = class ControllerDevice extends Homey.Device {
   async onReportGrid(w) {
     if (Number.isFinite(w)) {
       this.gridW = w;
+      this._gridWReported = true; // a real flow value has arrived; outranks estimate
       await this.recompute();
     }
     return true;
   }
 
   async onSetAnchor(w) {
-    if (Number.isFinite(w) && w > 0) await this.setSettings({ anchor: Math.round(w) });
+    // Anchor (the user's max power target) is an app-level setting owned by the
+    // settings page; writing it here fires the settings listener → recompute.
+    if (Number.isFinite(w) && w > 0) this.homey.settings.set('anchor', Math.round(w));
     await this.recompute();
     return true;
   }
@@ -196,6 +565,13 @@ module.exports = class ControllerDevice extends Homey.Device {
   // Kinds that can be boosted. comfort is excluded — it is always 'allow'.
   static get BOOSTABLE_KINDS() {
     return new Set(['nibe', 'spa', 'ev', 'battery', 'appliances']);
+  }
+
+  // Size of the custom-consumer status/insight capability pool (yahems_custom_1..N).
+  // Custom consumers beyond this still appear in the settings overview, just without
+  // their own controller-side insight tile.
+  static get MAX_CUSTOM_TILES() {
+    return 8;
   }
 
   /**
@@ -329,23 +705,36 @@ module.exports = class ControllerDevice extends Homey.Device {
 
   async recompute() {
     const s = this.getSettings();
-    const anchor = Number(s.anchor) || 4500;
+    // Max power target: app setting (owned by the settings page) is authoritative;
+    // fall back to any legacy device-level setting, then the 4500 W default.
+    const anchor = Number(this.homey.settings.get('anchor')) || Number(s.anchor) || 4500;
 
-    // The settings `house_meter_present` checkbox is authoritative.
-    // map.control.house_meter_present is only used if the setting is absent.
-    const settingMeter = s.house_meter_present;
-    const mapMeter     = this._deviceMap.control.house_meter_present === true;
-    const houseMeter   = settingMeter === true || (settingMeter === undefined && mapMeter);
-    const mode         = houseMeter ? 'control' : 'advisory';
+    // Operating mode drives advisory vs control. Only 'full' actuates.
+    const mode = this._opMode() === 'full' ? 'control' : 'advisory';
+
+    // Refresh the day-ahead electricity price cache if due (no-op most cycles).
+    await this._maybeRefreshPrices();
+    const elprisOre = elpris.priceAt(this._prices, Date.now());
 
     // --- Build HAL snapshot if the API is available and map has inputs ---
+    // DATA MINIMISATION: read ONLY the devices the user explicitly mapped, by id,
+    // rather than fetching every device on the Homey. This keeps the broad
+    // homey:manager:api permission scoped to what YAHEMS actually needs.
     let halSignals = {};
     if (this._api != null && this._deviceMap.inputs.length > 0) {
       try {
-        const devicesObj = await this._api.devices.getDevices();
+        const mappedIds = [...new Set(this._deviceMap.inputs.map((e) => e.deviceId))];
         // Build snapshot: { [deviceId]: { [capabilityId]: capabilityValue } }
         const snapshot = {};
-        for (const [id, dev] of Object.entries(devicesObj)) {
+        for (const id of mappedIds) {
+          let dev;
+          try {
+            dev = await this._api.devices.getDevice({ id });
+          } catch (e) {
+            // Mapped device removed/unavailable — omit it (HAL treats as absent,
+            // never substitutes zero). Do not abort the whole snapshot.
+            continue;
+          }
           if (dev && dev.capabilitiesObj) {
             snapshot[id] = {};
             for (const [capId, capObj] of Object.entries(dev.capabilitiesObj)) {
@@ -361,18 +750,61 @@ module.exports = class ControllerDevice extends Homey.Device {
       }
     }
 
-    // --- Determine consumption source ---
-    // Mapped home_consumption_w takes precedence over flow-action gridW.
-    // If neither is mapped, use gridW (must be >= 0, export reads as 0).
-    const consumptionW = Number.isFinite(halSignals.consumptionW)
-      ? Math.max(0, halSignals.consumptionW)
-      : Math.max(0, this.gridW);
+    // --- Determine net-power source (precedence) ---
+    // The engine wants net grid import in watts (export reads as 0). Precedence:
+    //   1. grid_power_w  — signed inverter/Shelly CT reading (preferred meter).
+    //   2. home_consumption_w — mapped house-draw meter (P1/HAN, PbtH).
+    //   3. flow-action gridW — "Report grid power" flow input.
+    //   4. no-meter fallback — per the `no_meter_source` setting:
+    //        'homey_energy' → Homey Energy's aggregated whole-home live total
+    //                         (real summed device power; great for apartments),
+    //        'estimate'     → synthetic season-aware model (lib/simfeeder),
+    //        'off'          → hold neutral.
+    // Each real source clamps to >= 0. Only when NOTHING real is available do we
+    // fall back, so a fake zero is never reported as surplus.
+    let consumptionW;
+    let sourceTag;
+    if (Number.isFinite(halSignals.gridPowerW)) {
+      consumptionW = Math.max(0, halSignals.gridPowerW);
+      sourceTag = 'grid_ct';
+    } else if (Number.isFinite(halSignals.consumptionW)) {
+      consumptionW = Math.max(0, halSignals.consumptionW);
+      sourceTag = 'measured';
+    } else if (this._gridWReported === true) {
+      consumptionW = Math.max(0, this.gridW);
+      sourceTag = 'flow';
+    } else {
+      const noMeterSource = this._noMeterSource();
+      const energyW = noMeterSource === 'homey_energy'
+        ? await this._readHomeyEnergyW()
+        : null;
+      if (Number.isFinite(energyW)) {
+        // Homey Energy whole-home total — real summed data. Works in any mode;
+        // actuation is unlocked only by selecting Full operation (op_mode).
+        consumptionW = Math.max(0, energyW);
+        sourceTag = 'homey_energy';
+      } else if (noMeterSource === 'off') {
+        // No source and fallback disabled: hold neutral (use 0 but tag honestly).
+        consumptionW = 0;
+        sourceTag = 'estimated';
+      } else {
+        // 'estimate', or 'homey_energy' chosen but unavailable this cycle.
+        consumptionW = simfeeder.estimateConsumptionW({});
+        sourceTag = 'estimated';
+      }
+    }
+
+    // Fault detection only applies to REAL dedicated sensor sources. The advisory
+    // estimate is intentionally steady, and the Homey Energy aggregate can briefly
+    // read low before devices report — neither can go stale or read implausibly
+    // high in a meaningful way, so skip both checks for them.
+    const isRealSource = ['grid_ct', 'measured', 'flow'].includes(sourceTag);
 
     // --- Implausible-reading check ---
     // Values above MAX_PLAUSIBLE_W indicate a spoofed or broken meter.
     // Treat as a fault: clamp the value fed to the buffer so it can recover
     // quickly once real values return, but force DEFCON 3 regardless.
-    const isImplausible = consumptionW > MAX_PLAUSIBLE_W;
+    const isImplausible = isRealSource && consumptionW > MAX_PLAUSIBLE_W;
     const consumptionWClamped = isImplausible ? MAX_PLAUSIBLE_W : consumptionW;
 
     // --- Staleness detection on consumptionW ---
@@ -380,7 +812,9 @@ module.exports = class ControllerDevice extends Homey.Device {
     // feed does not prevent stale detection from also firing later.
     // Was this signal in fault BEFORE checking this cycle (to detect transitions)?
     const wasFault = this.getCapabilityValue('yahems_fault') === true;
-    const isStaleNow = this._checkStaleness('consumptionW', consumptionWClamped);
+    const isStaleNow = isRealSource
+      ? this._checkStaleness('consumptionW', consumptionWClamped)
+      : false;
 
     // Combined fault condition: stale OR implausible.
     const isFault = isStaleNow || isImplausible;
@@ -420,22 +854,62 @@ module.exports = class ControllerDevice extends Homey.Device {
     const r = engine.rollingAverage(this.buffer, consumptionWClamped, 3);
     this.buffer = r.buffer;
 
-    // If stale OR implausible: force DEFCON 3 (fail safe — frost + comfort preserved).
-    const defcon = isFault ? 3 : engine.defconFromNet(r.average, anchor);
+    // 7.5-minute rolling average — half the grid's quarter-hour billing window, so
+    // it tracks a building load quickly while still smoothing 60 s spikes. Computed
+    // from timestamped samples so it is correct regardless of the recompute cadence.
+    // Kept separate from measure_power (the shorter, responsive value) for its own
+    // YAHEMS insight.
+    const now = Date.now();
+    this._samples = engine.pushSample(this._samples, consumptionWClamped, now);
+    this._avg = engine.windowAverage(this._samples, now);
+
+    // DEFCON judges the 7.5-min average — responsive but not jittery. (Before the
+    // first window has data, _avg already equals the first sample, so there is no
+    // warm-up gap; r.average is only a safety fallback.) If stale OR implausible:
+    // force DEFCON 3 (fail safe).
+    const judgedW = Number.isFinite(this._avg) ? this._avg : r.average;
+    const defcon = isFault ? 3 : engine.defconFromNet(judgedW, anchor);
+
+    // Effective electricity price (öre/kWh). Precedence: a mapped live price device
+    // (halSignals.priceOre) wins; otherwise the elprisetjustnu.se area feed. May be
+    // undefined (no price). Declared here so the capability write below can use it.
+    const effectivePriceOre = Number.isFinite(halSignals.priceOre)
+      ? halSignals.priceOre
+      : (Number.isFinite(elprisOre) ? elprisOre : undefined);
 
     // Update capabilities (own-capability writes — not actuation).
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);
     await this.setCapabilityValue('yahems_mode',   mode).catch(this.error);
+    await this.setCapabilityValue('yahems_source', sourceTag).catch(this.error);
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
+    await this.setCapabilityValue('yahems_defcon_label', `d${defcon}`).catch(this.error);
     await this.setCapabilityValue('yahems_fault',  isFault).catch(this.error);
+    // Only publish the 7.5-min average once the window has data (avoid a fake 0).
+    if (Number.isFinite(this._avg)) {
+      await this.setCapabilityValue('yahems_avg', this._avg).catch(this.error);
+    }
+    // Electricity price + feed-fault indicator. Only publish a number when known.
+    if (Number.isFinite(effectivePriceOre)) {
+      await this.setCapabilityValue('yahems_price', effectivePriceOre).catch(this.error);
+    }
+    await this.setCapabilityValue('yahems_price_fault', this._priceFault === true).catch(this.error);
+
+    // House main fuse + phases (app settings) feed EV load-balancing / clamps.
+    const fuseA = Number(this.homey.settings.get('main_fuse_a'));
+    const phases = Number(this.homey.settings.get('phases'));
 
     // Build the full decideDevices() input: HAL signals spread in, then
     // consumption, defcon and localHour are always set explicitly.
+    // (effectivePriceOre is computed above, before the capability writes.)
     const decideInput = {
       ...halSignals,
       defcon,
       consumptionW: Math.max(0, r.average),
       localHour: new Date().getHours(),
+      bigLoads: this._bigLoads(),
+      ...(effectivePriceOre != null ? { priceOre: effectivePriceOre } : {}),
+      ...(Number.isFinite(fuseA) ? { mainFuseA: fuseA } : {}),
+      ...(Number.isFinite(phases) ? { phases } : {}),
     };
     // Unwrap nested ev spread if halSignals brought ev.* fields; spread
     // already preserves the nested shape because resolveSignals uses _setPath.
@@ -455,11 +929,15 @@ module.exports = class ControllerDevice extends Homey.Device {
         : ' FAULT:stale')
       : '';
     this.log(
-      `[${mode}] D${defcon}${faultTag}${boostTag} | ev=${this._decisions.ev.amp}A `
+      `[${mode}] D${defcon} src=${sourceTag}${faultTag}${boostTag} | ev=${this._decisions.ev.amp}A `
       + `batt=${this._decisions.battery.mode}/${this._decisions.battery.power_w}W `
       + `nibe=vv${this._decisions.nibe.vv} spa=${this._decisions.spa.temp}C `
-      + `appl=${this._decisions.appliances.action}`,
+      + `appl=${this._decisions.dishwasher.action[0]}${this._decisions.washer.action[0]}${this._decisions.dryer.action[0]}`,
     );
+
+    // Reflect per-consumer allowed/paused state on the device page as status tiles.
+    await this._syncStatusCapabilities();
+    await this._syncCustomCapabilities();
 
     // Apply decisions through the single gated chokepoint (compute-only for now).
     await this._applyDecisions(this._decisions, mode);
@@ -520,15 +998,11 @@ module.exports = class ControllerDevice extends Homey.Device {
       throw new Error('_write: HomeyAPI is not initialised — cannot actuate');
     }
     // Determine current mode at call time (not cached, always fresh).
-    const s = this.getSettings();
-    const settingMeter = s.house_meter_present;
-    const mapMeter = this._deviceMap.control.house_meter_present === true;
-    const houseMeter = settingMeter === true || (settingMeter === undefined && mapMeter);
-    const mode = houseMeter ? 'control' : 'advisory';
-    if (mode !== 'control') {
+    // Only 'full' operating mode may actuate.
+    if (this._opMode() !== 'full') {
       throw new Error(
-        `_write: refused in advisory mode (deviceId=${deviceId} cap=${capability}). `
-        + 'Enable house_meter_present before actuating.',
+        `_write: refused outside full mode (deviceId=${deviceId} cap=${capability}). `
+        + 'Switch the operating mode to Full to actuate.',
       );
     }
     await simgate.guardActuation(() =>
@@ -538,6 +1012,9 @@ module.exports = class ControllerDevice extends Homey.Device {
 
   async onDeleted() {
     if (this._interval) this.homey.clearInterval(this._interval);
+    if (this._onAppSettingsSet) {
+      try { this.homey.settings.removeListener('set', this._onAppSettingsSet); } catch (_) { /* noop */ }
+    }
   }
 
 };

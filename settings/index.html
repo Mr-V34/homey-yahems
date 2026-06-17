@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YAHEMS</title>
+  <script type="text/javascript" src="/homey.js" data-origin="settings"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #222; margin: 0; padding: 16px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    h2 { font-size: 14px; margin: 22px 0 8px; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+    h3 { font-size: 13px; margin: 12px 0 6px; color: #444; }
+    p.lede { color: #666; font-size: 13px; margin: 0 0 8px; }
+    .card { background: #fafafa; border: 1px solid #eee; border-radius: 10px; padding: 14px; margin-bottom: 6px; }
+    .limit-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .limit-row label { font-size: 13px; min-width: 150px; }
+    input[type="number"], select { font-size: 13px; padding: 6px; border: 1px solid #ccc; border-radius: 6px; background: #fff; }
+    input.big { font-size: 18px; font-weight: 600; width: 120px; text-align: right; }
+    .hint { color: #888; font-size: 12px; margin-top: 2px; }
+    .row { padding: 9px 0; border-bottom: 1px solid #eee; }
+    .row:last-child { border-bottom: none; }
+    .row .label { font-weight: 600; font-size: 13px; }
+    .row .note { color: #999; font-size: 11px; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; margin-top: 4px; }
+    .subfns { margin: 6px 0 2px 8px; display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; }
+    .subfns .fn { font-size: 12px; color: #555; }
+    .toggle { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 13px; }
+    table.levels { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.levels th, table.levels td { padding: 5px 3px; text-align: center; border-bottom: 1px solid #eee; }
+    table.levels th.dev, table.levels td.dev { text-align: left; font-weight: 600; white-space: nowrap; }
+    table.levels thead th { border-radius: 4px; }
+    .d5 { background: #1565C0; color: #fff; } .d4 { background: #2E7D32; color: #fff; }
+    .d3 { background: #F4B400; color: #222; } .d2 { background: #D32F2F; color: #fff; }
+    .d1 { background: #FFFFFF; color: #222; border: 1px solid #bbb; }
+    table.levels td input, table.levels td select { width: 58px; font-size: 12px; padding: 3px; text-align: center; }
+    .custom-item { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .smallbtn { font-size: 12px; padding: 5px 10px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; color: #333; }
+    .actions { margin-top: 18px; display: flex; gap: 10px; align-items: center; position: sticky; bottom: 0; background: #fff; padding: 10px 0; }
+    button.save { font-size: 14px; padding: 9px 18px; border: none; border-radius: 8px; background: #F2600C; color: #fff; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    #status { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>YAHEMS</h1>
+  <p class="lede" id="lede"></p>
+
+  <h2 id="h-overview"></h2>
+  <div class="card">
+    <div id="overview"></div>
+    <button class="smallbtn" id="refresh-overview" style="margin-top:8px;"></button>
+  </div>
+
+  <h2 id="h-mode"></h2>
+  <div class="card">
+    <label id="l-mode" style="display:block;margin-bottom:6px;"></label>
+    <select id="op-mode">
+      <option value="simulation"></option>
+      <option value="advisory"></option>
+      <option value="full"></option>
+    </select>
+    <div class="hint" id="mode-hint"></div>
+  </div>
+
+  <h2 id="h-limits"></h2>
+  <div class="card">
+    <div class="limit-row">
+      <label id="l-max"></label>
+      <input type="range" id="anchor" min="500" max="20000" step="100" style="width:55%;vertical-align:middle;" />
+      <span id="anchor-val" style="font-weight:bold;font-size:16px;"></span>
+    </div>
+    <div class="limit-row">
+      <label id="l-fuse"></label>
+      <select id="fuse"></select> <span>A</span>
+      <label id="l-phases" style="min-width:auto;margin-left:10px;"></label>
+      <select id="phases"></select>
+    </div>
+    <div class="hint" id="limits-hint"></div>
+  </div>
+
+  <h2 id="h-inputs"></h2>
+  <div class="card"><div id="inputs"></div></div>
+
+  <div class="card">
+    <label id="l-pricearea" style="display:block;margin-bottom:6px;"></label>
+    <select id="price-area">
+      <option value="">—</option>
+      <option value="SE1">SE1 — Luleå / Norra Sverige</option>
+      <option value="SE2">SE2 — Sundsvall / Norra Mellansverige</option>
+      <option value="SE3">SE3 — Stockholm / Södra Mellansverige</option>
+      <option value="SE4">SE4 — Malmö / Södra Sverige</option>
+    </select>
+    <div class="hint" id="pricearea-hint"></div>
+  </div>
+
+  <div class="card">
+    <label id="l-pricegate" style="display:block;margin-bottom:6px;"></label>
+    <input type="range" id="price-gate" min="0" max="500" step="5" style="width:68%;vertical-align:middle;" />
+    <span id="price-gate-val" style="margin-left:8px;font-weight:bold;"></span>
+    <div class="hint" id="pricegate-hint"></div>
+  </div>
+
+  <h2 id="h-devices"></h2>
+  <div id="devices"></div>
+
+  <h2 id="h-custom"></h2>
+  <div class="card">
+    <p class="hint" id="custom-hint"></p>
+    <div id="custom"></div>
+    <button class="smallbtn" id="add-custom"></button>
+  </div>
+
+  <h2 id="h-levels"></h2>
+  <div class="card">
+    <p class="lede" id="levels-lede"></p>
+    <div class="hint" id="defcon-bands" style="margin-bottom:8px;font-size:12px;color:#444;"></div>
+    <table class="levels"><thead id="levels-head"></thead><tbody id="levels-body"></tbody></table>
+  </div>
+
+  <div class="actions">
+    <button class="save" id="save" disabled></button>
+    <span id="status"></span>
+  </div>
+
+  <script type="text/javascript">
+    var SV = (navigator.language || 'en').toLowerCase().indexOf('sv') === 0;
+    function t(en, sv) { return SV ? sv : en; }
+    function L(o) { return SV ? (o.labelSv || o.labelEn) : o.labelEn; }
+
+    var DEVICES = [], SIGNALS = [], CATALOG = [], LEVELS = null;
+    var existingMap = { inputs: [], control: { house_meter_present: false }, controls: {}, custom: [] };
+    var ownedSignals = {};   // signalKeys owned by a catalog function (excluded from Inputs)
+    var customCounter = 0;
+    var FUSES = [16, 20, 25, 35, 50, 63];
+    var OPMODE = 'advisory';  // simulation | advisory | full
+    // Matrix keys that may be flagged as a big load (price-slider follower).
+    // Battery is excluded (it has its own price logic).
+    var BIGLOAD_KEYS = { nibe: 1, spa: 1, ev: 1, dishwasher: 1, washer: 1, dryer: 1 };
+
+    // Live per-mode hint + dependent re-renders (simulate option visibility).
+    function updateModeUI() {
+      var hint = document.getElementById('mode-hint');
+      if (OPMODE === 'simulation') {
+        hint.textContent = t(
+          'Try YAHEMS with devices you don’t own. Pick “Simulate” on a device to see its behaviour. Never controls anything.',
+          'Prova YAHEMS med enheter du inte har. Välj ”Simulera” på en enhet för att se beteendet. Styr aldrig något.');
+      } else if (OPMODE === 'full') {
+        hint.textContent = t(
+          'Uses your best available house reading (a real meter/dongle, or Homey Energy in an apartment) and may control installed devices. Available in any home. Note: actual device control is the next build — for now it reads and computes.',
+          'Använder husets bästa tillgängliga mätvärde (en riktig mätare/dongel, eller Homey Energy i en lägenhet) och får styra installerade enheter. Tillgängligt i alla hem. Obs: faktisk enhetsstyrning är nästa bygge — just nu läser och beräknar den.');
+      } else {
+        hint.textContent = t(
+          'Uses your installed devices and reads Homey Energy’s whole-home total — ideal without a P1/energy dongle. Advisory only; switch to Full operation when ready.',
+          'Använder dina installerade enheter och läser Homey Energys hustotal — perfekt utan P1/energidongel. Endast rådgivande; växla till Full drift när du är redo.');
+      }
+      // Simulate presence is only offered in simulation mode → re-render device rows.
+      // Capture current selections first so switching mode never wipes in-progress edits.
+      if (CATALOG && CATALOG.length) { existingMap = collectMap(); renderDevices(); }
+    }
+
+    // ---- Overview: live per-consumer allowed/paused ----
+    function trDetail(d) {
+      if (!d) return '';
+      return String(d)
+        .replace(/\brun\b/, t('run', 'körs')).replace(/\bpause\b/, t('pause', 'paus'))
+        .replace(/\bmonitor\b/, t('monitor', 'övervakas')).replace(/\bcharge\b/, t('charge', 'laddar'))
+        .replace(/\bdischarge\b/, t('discharge', 'urladdar')).replace(/\bidle\b/, t('idle', 'vilar'))
+        .replace(/\bheat\b/, t('heat', 'värme')).replace(/\bprice\b/, t('price', 'pris')).replace(/\bboost\b/, t('boost', 'boost'));
+    }
+    function badge(allowed) {
+      var s = document.createElement('span');
+      s.textContent = allowed ? t('Allowed', 'Tillåts') : t('Paused', 'Pausad');
+      s.style.cssText = 'font-size:11px;padding:2px 9px;border-radius:10px;color:#fff;white-space:nowrap;background:'
+        + (allowed ? '#2E7D32' : '#D32F2F') + ';';
+      return s;
+    }
+    function renderOverview(Homey) {
+      var box = document.getElementById('overview');
+      box.textContent = t('Loading…', 'Laddar…');
+      apiGet(Homey, '/status').then(function (st) {
+        box.innerHTML = '';
+        if (!st || !st.available) {
+          box.textContent = t('No controller paired yet — add the YAHEMS Controller device.',
+            'Ingen styrenhet ännu — lägg till enheten YAHEMS Controller.');
+          return;
+        }
+        var head = document.createElement('div'); head.className = 'hint'; head.style.marginBottom = '8px';
+        head.textContent = t('Mode', 'Läge') + ': ' + (st.mode || '—')
+          + ' · DEFCON ' + (st.defcon != null ? st.defcon : '—')
+          + ' · ' + t('Source', 'Källa') + ': ' + (st.source || '—')
+          + ' · ' + t('Now', 'Nu') + ': ' + (st.power != null ? Math.round(st.power) + ' W' : '—');
+        box.appendChild(head);
+
+        // 7.5-minute rolling average — the figure DEFCON is judged on.
+        var avg = document.createElement('div'); avg.className = 'hint'; avg.style.marginBottom = '8px';
+        avg.textContent = t('7.5-min average', '7,5-min snitt') + ': '
+          + (st.avg != null ? Math.round(st.avg) + ' W' : t('warming up…', 'värms upp…'));
+        box.appendChild(avg);
+        var rows = (st.devices || []).map(function (dv) {
+          return { label: (SV ? dv.labelSv : dv.labelEn), allowed: dv.allowed, detail: dv.detail, presence: dv.presence, bigLoad: dv.bigLoad };
+        });
+        (st.custom || []).forEach(function (cu) { rows.push({ label: cu.name, allowed: cu.allowed, detail: cu.detail, custom: true }); });
+        if (!rows.length) {
+          var e = document.createElement('div'); e.className = 'hint';
+          e.textContent = t('No devices configured yet.', 'Inga enheter konfigurerade än.');
+          box.appendChild(e); return;
+        }
+        rows.forEach(function (rw) {
+          var r = document.createElement('div'); r.className = 'row';
+          r.style.cssText = 'display:flex;align-items:center;gap:8px;';
+          var nm = document.createElement('div'); nm.className = 'label'; nm.style.flex = '1';
+          nm.textContent = rw.label
+            + (rw.presence === 'simulate' ? ' (' + t('sim', 'sim') + ')' : '')
+            + (rw.bigLoad ? ' ⚡' : '');
+          r.appendChild(nm);
+          var det = document.createElement('span'); det.className = 'note'; det.textContent = trDetail(rw.detail);
+          r.appendChild(det);
+          r.appendChild(badge(rw.allowed));
+          box.appendChild(r);
+        });
+      }).catch(function (err) { box.textContent = t('Status unavailable: ', 'Status ej tillgänglig: ') + err; });
+    }
+
+    // DEFCON band transparency: bands are thirds of the anchor (mirrors engine).
+    function renderDefconBands() {
+      var a = Math.round(Number(document.getElementById('anchor').value));
+      var av = document.getElementById('anchor-val'); if (av) av.textContent = (isFinite(a) ? a : '—') + ' W';
+      var el = document.getElementById('defcon-bands');
+      if (!isFinite(a) || a < 1) { el.textContent = ''; return; }
+      var t3 = Math.round(a / 3), t23 = Math.round(2 * a / 3);
+      el.innerHTML = t('Power limit', 'Effektgräns') + ' ' + a + ' W → '
+        + '<b>D5</b> ≤5 W · <b>D4</b> ≤' + t3 + ' W · <b>D3</b> ≤' + t23
+        + ' W · <b>D2</b> ≤' + a + ' W · <b>D1</b> >' + a + ' W';
+    }
+
+    function onHomeyReady(Homey) {
+      document.getElementById('lede').textContent = t(
+        'Place your devices, set your limits, and tune what YAHEMS does at each level.',
+        'Placera dina enheter, sätt dina gränser och justera vad YAHEMS gör på varje nivå.');
+      document.getElementById('h-overview').textContent = t('Overview', 'Översikt');
+      document.getElementById('refresh-overview').textContent = t('Refresh', 'Uppdatera');
+      document.getElementById('h-limits').textContent = t('Limits', 'Gränser');
+      document.getElementById('l-max').textContent = t('Power limit (max)', 'Effektgräns (max)');
+      document.getElementById('l-fuse').textContent = t('Main fuse', 'Huvudsäkring');
+      document.getElementById('l-phases').textContent = t('Phases', 'Faser');
+      document.getElementById('limits-hint').textContent = t(
+        'Import at/above the power limit is DEFCON 1. The main fuse caps EV charging current.',
+        'Import på/över effektgränsen är DEFCON 1. Huvudsäkringen begränsar elbilens laddström.');
+      document.getElementById('h-inputs').textContent = t('Inputs (sensors)', 'Insignaler (sensorer)');
+      document.getElementById('h-mode').textContent = t('Operating mode', 'Driftläge');
+      document.getElementById('l-mode').textContent = t('How YAHEMS should work:', 'Hur YAHEMS ska arbeta:');
+      (function () {
+        var o = document.getElementById('op-mode').options;
+        o[0].textContent = t('Simulation — try devices you don’t own', 'Simulering — prova enheter du inte har');
+        o[1].textContent = t('Advisory — installed devices, reads Homey Energy', 'Rådgivande — installerade enheter, läser Homey Energy');
+        o[2].textContent = t('Full operation — read meter & control devices', 'Full drift — läs mätare & styr enheter');
+      })();
+      document.getElementById('op-mode').addEventListener('change', function () { OPMODE = this.value; updateModeUI(); });
+      document.getElementById('l-pricearea').textContent = t(
+        'Electricity price area (elprisetjustnu.se)',
+        'Elprisområde (elprisetjustnu.se)');
+      document.getElementById('pricearea-hint').textContent = t(
+        'Pick the area where you live to fetch today’s and tomorrow’s prices (öre/kWh) once a day from the free elprisetjustnu.se service. Leave empty if you map your own price device (e.g. Tibber), which takes priority. If the service can’t be reached the price-fault indicator lights and it retries.',
+        'Välj området där du bor för att hämta dagens och morgondagens priser (öre/kWh) en gång per dygn från gratistjänsten elprisetjustnu.se. Lämna tomt om du mappar en egen prisenhet (t.ex. Tibber), som har företräde. Om tjänsten inte kan nås tänds prisfel-indikatorn och den försöker igen.');
+      document.getElementById('l-pricegate').textContent = t(
+        'Price sensitivity — hold big loads above:',
+        'Priskänslighet — håll storförbrukare över:');
+      document.getElementById('pricegate-hint').textContent = t(
+        'Drag from cheap to expensive. Devices ticked as “big load” are held back when the electricity price (mapped device or the price area above) is over this threshold.',
+        'Dra från billigt till dyrt. Enheter som bockats som ”storförbrukare” hålls tillbaka när elpriset (mappad enhet eller prisområdet ovan) är över denna tröskel.');
+      (function () {
+        var pg = document.getElementById('price-gate');
+        var pv = document.getElementById('price-gate-val');
+        var show = function () { pv.textContent = pg.value + ' ' + t('öre/kWh', 'öre/kWh'); };
+        pg.addEventListener('input', show);
+        pg._show = show;
+      })();
+      document.getElementById('h-devices').textContent = t('Your devices', 'Dina enheter');
+      document.getElementById('h-custom').textContent = t('Your own consumers', 'Egna förbrukare');
+      document.getElementById('add-custom').textContent = t('+ Add consumer', '+ Lägg till förbrukare');
+      document.getElementById('custom-hint').textContent = t(
+        'A name and mode is enough — each consumer gets its own YAHEMS status insight on the controller. Linking a Homey device is optional.',
+        'Ett namn och läge räcker — varje förbrukare får en egen YAHEMS-statusinsikt på kontrollern. Att koppla en Homey-enhet är valfritt.');
+      document.getElementById('h-levels').textContent = t('How YAHEMS controls each level', 'Så styr YAHEMS varje nivå');
+      document.getElementById('levels-lede').textContent = t(
+        'Edit the setpoints (5 = surplus … 1 = critical). Contradictory edits are auto-corrected to the last safe values.',
+        'Ändra börvärden (5 = överskott … 1 = kritisk). Motstridiga ändringar rättas automatiskt till senaste säkra värden.');
+      document.getElementById('save').textContent = t('Save', 'Spara');
+
+      Promise.all([
+        apiGet(Homey, '/signals'), apiGet(Homey, '/devices'), apiGet(Homey, '/catalog'), apiGet(Homey, '/levels'),
+        get(Homey, 'device_map'), get(Homey, 'op_mode'),
+        get(Homey, 'anchor'), get(Homey, 'main_fuse_a'), get(Homey, 'phases'),
+        get(Homey, 'price_gate_ore'), get(Homey, 'price_area'),
+      ]).then(function (r) {
+        SIGNALS = r[0] || []; DEVICES = r[1] || []; CATALOG = r[2] || []; LEVELS = r[3] || null;
+        existingMap = parseMap(r[4]);
+        var mode = r[5];
+        if (mode !== 'simulation' && mode !== 'advisory' && mode !== 'full') {
+          mode = 'advisory'; // operating mode is the single source of truth
+        }
+        OPMODE = mode;
+        document.getElementById('op-mode').value = mode;
+        document.getElementById('anchor').value = numOr(r[6], 4500);
+        document.getElementById('anchor').addEventListener('input', renderDefconBands);
+        buildFuse(numOr(r[7], 25), numOr(r[8], 3));
+        (function () {
+          var pg = document.getElementById('price-gate');
+          pg.value = numOr(r[9], 300);
+          pg._show();
+        })();
+        (function () {
+          var pa = ['SE1', 'SE2', 'SE3', 'SE4'].indexOf(r[10]) !== -1 ? r[10] : '';
+          document.getElementById('price-area').value = pa;
+        })();
+        computeOwned();
+        renderInputs(); renderDevices(); renderCustom(); renderLevels();
+        renderDefconBands(); updateModeUI();
+        renderOverview(Homey);
+        document.getElementById('refresh-overview').addEventListener('click', function () { renderOverview(Homey); });
+        document.getElementById('add-custom').addEventListener('click', function () { addCustomRow({}); });
+        document.getElementById('save').disabled = false;
+        bindSave(Homey);
+        Homey.ready();
+      }).catch(function (err) { setStatus(t('Failed to load: ', 'Kunde inte ladda: ') + err); Homey.ready(); });
+    }
+
+    function apiGet(Homey, p) { return new Promise(function (res, rej) { Homey.api('GET', p, null, function (e, r) { e ? rej(e) : res(r); }); }); }
+    function get(Homey, k) { return new Promise(function (res, rej) { Homey.get(k, function (e, v) { e ? rej(e) : res(v); }); }); }
+    function set(Homey, k, v) { return new Promise(function (res, rej) { Homey.set(k, v, function (e) { e ? rej(e) : res(); }); }); }
+    function numOr(v, d) { return (v != null && isFinite(v)) ? v : d; }
+    function baseCap(id) { return String(id).split('.')[0]; }
+    function deviceById(id) { for (var i = 0; i < DEVICES.length; i++) if (DEVICES[i].id === id) return DEVICES[i]; return null; }
+    function opt(v, txt) { var o = document.createElement('option'); o.value = v; o.textContent = txt; return o; }
+    function setStatus(m) { document.getElementById('status').textContent = m; }
+
+    function parseMap(raw) {
+      var fb = { inputs: [], control: { house_meter_present: false }, controls: {}, custom: [] };
+      if (!raw) return fb;
+      try {
+        var m = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+        if (!m || typeof m !== 'object') return fb;
+        if (!Array.isArray(m.inputs)) m.inputs = [];
+        if (!m.control || typeof m.control !== 'object') m.control = { house_meter_present: false };
+        if (!m.controls || typeof m.controls !== 'object') m.controls = {};
+        if (!Array.isArray(m.custom)) m.custom = [];
+        return m;
+      } catch (e) { return fb; }
+    }
+
+    function computeOwned() {
+      ownedSignals = {};
+      CATALOG.forEach(function (g) {
+        g.subgroups.forEach(function (sg) {
+          (sg.functions || []).forEach(function (fn) { if (fn.signalKey) ownedSignals[fn.signalKey] = true; });
+        });
+      });
+    }
+
+    function buildFuse(fuseVal, phasesVal) {
+      var f = document.getElementById('fuse'); f.innerHTML = '';
+      FUSES.forEach(function (a) { f.appendChild(opt(a, a)); });
+      f.value = FUSES.indexOf(fuseVal) !== -1 ? fuseVal : 25;
+      var p = document.getElementById('phases'); p.innerHTML = '';
+      [1, 3].forEach(function (n) { p.appendChild(opt(n, n)); });
+      p.value = (phasesVal === 1 || phasesVal === 3) ? phasesVal : 3;
+    }
+
+    function deviceHasCap(dev, caps) {
+      if (!caps || !caps.length) return false;
+      for (var i = 0; i < dev.capabilities.length; i++) if (caps.indexOf(baseCap(dev.capabilities[i].id)) !== -1) return true;
+      return false;
+    }
+    function relevantDevices(filterCaps, filterClasses, keepId, wholeHome) {
+      return DEVICES.filter(function (d) {
+        if (d.id === keepId) return true;       // keep an already-mapped device
+        if (d.ours) return false;               // never list YAHEMS's own devices
+        if (wholeHome) return d.cumulative === true; // only true whole-home meters
+        if (filterClasses && filterClasses.indexOf(d.class) !== -1) return true;
+        return deviceHasCap(d, filterCaps);
+      });
+    }
+    function capSelectFor(dev, preCap, suggest) {
+      var s = document.createElement('select');
+      s.appendChild(opt('', t('— capability —', '— förmåga —')));
+      if (dev) {
+        dev.capabilities.forEach(function (c) { s.appendChild(opt(c.id, c.title + ' (' + c.id + ')')); });
+        if (preCap) s.value = preCap;
+        else if (suggest) {
+          for (var i = 0; i < suggest.length; i++) {
+            var m = dev.capabilities.filter(function (c) { return baseCap(c.id) === suggest[i]; })[0];
+            if (m) { s.value = m.id; break; }
+          }
+        }
+      }
+      return s;
+    }
+
+    // ---- Inputs section (pure signals not owned by a controlled device) ----
+    function existingInput(key) {
+      for (var i = 0; i < existingMap.inputs.length; i++) if (existingMap.inputs[i].signal === key) return existingMap.inputs[i];
+      return null;
+    }
+    function renderInputs() {
+      var box = document.getElementById('inputs'); box.innerHTML = '';
+      var hint = document.createElement('div'); hint.className = 'hint';
+      hint.textContent = t(
+        'All optional. Grid / house meters list only whole-home meters — in an apartment leave them empty and YAHEMS uses the Homey Energy total.',
+        'Allt valfritt. Nät-/husmätare visar bara hela-hemmet-mätare — i en lägenhet lämnar du dem tomma och YAHEMS använder Homey Energy-totalen.');
+      box.appendChild(hint);
+      SIGNALS.filter(function (s) { return !ownedSignals[s.key]; }).forEach(function (sig) {
+        var prev = existingInput(sig.key);
+        var row = document.createElement('div'); row.className = 'row'; row.dataset.signal = sig.key;
+        var lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = SV ? sig.labelSv : sig.labelEn; row.appendChild(lbl);
+        var controls = document.createElement('div'); controls.className = 'controls';
+        var dev = document.createElement('select'); dev.className = 'in-device';
+        dev.appendChild(opt('', t('— not mapped —', '— ej kopplad —')));
+        relevantDevices(sig.filterCaps, sig.filterClasses, prev ? prev.deviceId : null, sig.wholeHome).forEach(function (d) {
+          dev.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
+        });
+        if (prev) dev.value = prev.deviceId;
+        var cap = capSelectFor(deviceById(dev.value), prev ? prev.capability : null, sig.suggestCaps); cap.className = 'in-cap';
+        dev.addEventListener('change', function () {
+          var n = capSelectFor(deviceById(dev.value), null, sig.suggestCaps); n.className = 'in-cap';
+          controls.replaceChild(n, controls.querySelector('.in-cap'));
+        });
+        controls.appendChild(dev); controls.appendChild(cap); controls.appendChild(document.createElement('span'));
+        row.appendChild(controls); box.appendChild(row);
+      });
+    }
+
+    // ---- Devices section (grouped by taxonomy) ----
+    function renderDevices() {
+      var box = document.getElementById('devices'); box.innerHTML = '';
+      CATALOG.forEach(function (g) {
+        var card = document.createElement('div'); card.className = 'card';
+        var h = document.createElement('h3'); h.textContent = L(g); card.appendChild(h);
+        g.subgroups.forEach(function (sg) {
+          var prev = existingMap.controls[sg.key] || {};
+          var row = document.createElement('div'); row.className = 'row'; row.dataset.subgroup = sg.key;
+          var lbl = document.createElement('div'); lbl.className = 'label'; lbl.textContent = L(sg); row.appendChild(lbl);
+
+          var sel = document.createElement('select'); sel.className = 'sg-presence';
+          relevantDevices(sg.filterCaps, sg.filterClasses, prev.deviceId).forEach(function (d) {
+            sel.appendChild(opt(d.id, d.zone ? (d.name + ' · ' + d.zone) : d.name));
+          });
+          sel.appendChild(opt('__absent__', t('Not installed', 'Ej installerad')));
+          // "Simulate" is only offered in Simulation mode (try devices you don't own).
+          // Kept here, guarded, so it stays available for the future in other modes.
+          if (OPMODE === 'simulation') sel.appendChild(opt('__simulate__', t('Simulate', 'Simulera')));
+          if (prev.presence === 'installed' && prev.deviceId) sel.value = prev.deviceId;
+          else if (prev.presence === 'simulate' && OPMODE === 'simulation') sel.value = '__simulate__';
+          else sel.value = '__absent__';
+          row.appendChild(sel);
+
+          // "Storförbrukare" (big-load): this device follows the price slider.
+          if (BIGLOAD_KEYS[sg.matrixKey]) {
+            var blLab = document.createElement('label'); blLab.className = 'toggle'; blLab.style.marginTop = '6px';
+            var blCb = document.createElement('input'); blCb.type = 'checkbox'; blCb.className = 'sg-bigload';
+            blCb.checked = prev.bigLoad === true;
+            var blTxt = document.createElement('span'); blTxt.textContent = t('Big load (follows price slider)', 'Storförbrukare (följer prisreglaget)');
+            blLab.appendChild(blCb); blLab.appendChild(blTxt); row.appendChild(blLab);
+          }
+
+          var fnbox = document.createElement('div'); fnbox.className = 'subfns'; row.appendChild(fnbox);
+          var mapFns = (sg.functions || []).filter(function (f) { return f.signalKey; });
+          function renderFns() {
+            fnbox.innerHTML = '';
+            var dev = deviceById(sel.value);
+            if (!dev) return; // only when a real device is chosen
+            mapFns.forEach(function (fn) {
+              var pf = (prev.functions && prev.functions[fn.key]) || {};
+              var lab = document.createElement('span'); lab.className = 'fn'; lab.textContent = L(fn); fnbox.appendChild(lab);
+              var cs = capSelectFor(dev, pf.capability, fn.suggestCaps); cs.className = 'fn-cap'; cs.dataset.fn = fn.key; cs.dataset.signal = fn.signalKey;
+              fnbox.appendChild(cs);
+            });
+          }
+          sel.addEventListener('change', renderFns);
+          renderFns();
+          card.appendChild(row);
+        });
+        box.appendChild(card);
+      });
+    }
+
+    // ---- Custom consumers ----
+    function renderCustom() {
+      document.getElementById('custom').innerHTML = '';
+      (existingMap.custom || []).forEach(function (c) { addCustomRow(c); });
+    }
+    function addCustomRow(c) {
+      c = c || {};
+      var box = document.getElementById('custom');
+      var wrap = document.createElement('div'); wrap.className = 'custom-item';
+      var name = document.createElement('input'); name.type = 'text'; name.placeholder = t('Name', 'Namn'); name.className = 'c-name'; if (c.name) name.value = c.name;
+      var dev = document.createElement('select'); dev.className = 'c-device';
+      dev.appendChild(opt('', t('— device —', '— enhet —')));
+      relevantDevices(['measure_power', 'onoff'], ['socket'], c.deviceId).forEach(function (d) { dev.appendChild(opt(d.id, d.name)); });
+      if (c.deviceId) dev.value = c.deviceId;
+      var mode = document.createElement('select'); mode.className = 'c-mode';
+      mode.appendChild(opt('monitor', t('Monitor only', 'Endast övervakad')));
+      mode.appendChild(opt('pausable', t('Pausable', 'Pausbar')));
+      if (c.mode) mode.value = c.mode;
+      var del = document.createElement('button'); del.className = 'smallbtn'; del.textContent = '✕';
+      del.addEventListener('click', function () { box.removeChild(wrap); });
+      wrap.appendChild(name); wrap.appendChild(dev); wrap.appendChild(mode); wrap.appendChild(del);
+      box.appendChild(wrap);
+    }
+
+    // ---- Editable level table ----
+    var LEVEL_ROWS = [
+      { key: 'ev', label: t('EV charger', 'Elbilsladdare'), type: 'amp' },
+      { key: 'spa', label: t('Spa', 'Spa'), type: 'temp' },
+      { key: 'nibe', label: t('Hot water', 'Varmvatten'), type: 'vv' },
+      { key: 'dishwasher', label: t('Dishwasher', 'Diskmaskin'), type: 'runpause' },
+      { key: 'washer', label: t('Washing machine', 'Tvättmaskin'), type: 'runpause' },
+      { key: 'dryer', label: t('Tumble dryer', 'Torktumlare'), type: 'runpause' },
+      { key: 'battery', label: t('Battery', 'Batteri'), type: 'battery' },
+    ];
+    function renderLevels() {
+      if (!LEVELS) return;
+      var head = document.getElementById('levels-head'); var body = document.getElementById('levels-body');
+      head.innerHTML = ''; body.innerHTML = '';
+      var htr = document.createElement('tr'); htr.appendChild(document.createElement('th')).className = 'dev';
+      LEVELS.levels.forEach(function (lvl) { var th = document.createElement('th'); th.className = 'd' + lvl; th.textContent = 'D' + lvl; htr.appendChild(th); });
+      head.appendChild(htr);
+      var fuseMax = Number(document.getElementById('fuse').value) || 32;
+      // Hide rows for devices marked "Not installed". matrixKey → presence.
+      var presenceByMatrix = {};
+      CATALOG.forEach(function (g) {
+        g.subgroups.forEach(function (sg) {
+          if (sg.matrixKey && existingMap.controls[sg.key]) presenceByMatrix[sg.matrixKey] = existingMap.controls[sg.key].presence;
+        });
+      });
+      LEVEL_ROWS.forEach(function (def) {
+        if (presenceByMatrix[def.key] === 'absent') return; // not installed → hide
+        var tr = document.createElement('tr'); tr.dataset.dev = def.key; tr.dataset.type = def.type;
+        var td0 = document.createElement('td'); td0.className = 'dev'; td0.textContent = def.label; tr.appendChild(td0);
+        LEVELS.levels.forEach(function (lvl) {
+          var td = document.createElement('td');
+          var v = LEVELS[def.key] ? LEVELS[def.key][lvl] : null;
+          var el;
+          if (def.type === 'runpause') {
+            el = document.createElement('select'); el.appendChild(opt('run', t('run', 'kör'))); el.appendChild(opt('pause', t('pause', 'paus'))); el.value = (v === 'pause') ? 'pause' : 'run';
+          } else if (def.type === 'battery') {
+            el = document.createElement('select'); el.appendChild(opt('charge', t('charge', 'ladda'))); el.appendChild(opt('discharge', t('discharge', 'urladdn'))); el.value = (v === 'charge') ? 'charge' : 'discharge';
+          } else if (def.type === 'amp') {
+            el = document.createElement('input'); el.type = 'number'; el.min = 0; el.max = fuseMax; el.step = 1; el.value = (v == null ? '' : Math.min(v, fuseMax));
+          } else { // temp / vv
+            el = document.createElement('input'); el.type = 'number'; el.min = 0; el.max = 70; el.step = 1;
+            el.value = (def.type === 'temp') ? (v && v.heat ? v.temp : 0) : (v == null ? '' : v);
+          }
+          el.dataset.lvl = lvl; td.appendChild(el); tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+    }
+    function buildOverride() {
+      var ov = {};
+      document.querySelectorAll('#levels-body tr').forEach(function (tr) {
+        var dev = tr.dataset.dev, type = tr.dataset.type; ov[dev] = { bands: {} };
+        tr.querySelectorAll('[data-lvl]').forEach(function (el) {
+          var lvl = el.dataset.lvl;
+          if (type === 'runpause') ov[dev].bands[lvl] = { action: el.value };
+          else if (type === 'battery') ov[dev].bands[lvl] = { mode: el.value };
+          else if (type === 'amp') ov[dev].bands[lvl] = { amp: Math.max(0, Math.round(Number(el.value) || 0)) };
+          else if (type === 'vv') ov[dev].bands[lvl] = { vv: Math.round(Number(el.value) || 0) };
+          else if (type === 'temp') { var temp = Math.round(Number(el.value) || 0); ov[dev].bands[lvl] = temp > 0 ? { temp: temp, heat: true } : { temp: 10, heat: false }; }
+        });
+      });
+      return ov;
+    }
+
+    // ---- Save ----
+    function collectMap() {
+      var inputs = [];
+      // Pure inputs
+      document.querySelectorAll('#inputs .row').forEach(function (row) {
+        var d = row.querySelector('.in-device').value, c = row.querySelector('.in-cap').value;
+        if (d && c) inputs.push({ signal: row.dataset.signal, deviceId: d, capability: c });
+      });
+      // Controlled devices → presence + function mappings (those with signalKey → inputs)
+      var controls = {};
+      document.querySelectorAll('#devices .row').forEach(function (row) {
+        var key = row.dataset.subgroup; var val = row.querySelector('.sg-presence').value;
+        var entry;
+        if (val === '__absent__') entry = { presence: 'absent' };
+        else if (val === '__simulate__') entry = { presence: 'simulate' };
+        else { entry = { presence: 'installed', deviceId: val, functions: {} };
+          row.querySelectorAll('.fn-cap').forEach(function (cs) {
+            if (cs.value) {
+              entry.functions[cs.dataset.fn] = { deviceId: val, capability: cs.value };
+              inputs.push({ signal: cs.dataset.signal, deviceId: val, capability: cs.value });
+            }
+          });
+        }
+        var bl = row.querySelector('.sg-bigload');
+        if (bl && bl.checked) entry.bigLoad = true;
+        controls[key] = entry;
+      });
+      // Custom consumers
+      var custom = [];
+      document.querySelectorAll('#custom .custom-item').forEach(function (it, i) {
+        var nm = it.querySelector('.c-name').value;
+        var d = it.querySelector('.c-device').value;
+        // A custom consumer needs only a name + mode; the device is optional.
+        // Skip a row only if it is completely empty (no name and no device).
+        if (!nm && !d) return;
+        var cu = { id: 'custom-' + i, name: nm || ('Consumer ' + (i + 1)), mode: it.querySelector('.c-mode').value };
+        if (d) { cu.deviceId = d; cu.capability = 'measure_power'; }
+        custom.push(cu);
+      });
+      var control = (existingMap && existingMap.control) ? existingMap.control : { house_meter_present: false };
+      return { inputs: inputs, control: control, controls: controls, custom: custom };
+    }
+    function bindSave(Homey) {
+      document.getElementById('save').addEventListener('click', function () {
+        var btn = this; btn.disabled = true; setStatus(t('Saving…', 'Sparar…'));
+        var map = collectMap();
+        var anchor = Math.round(Number(document.getElementById('anchor').value)); if (!isFinite(anchor) || anchor < 500) anchor = 4500;
+        var fuse = Number(document.getElementById('fuse').value) || 25;
+        var phases = Number(document.getElementById('phases').value) || 3;
+        var override = buildOverride();
+        Promise.all([
+          set(Homey, 'device_map', JSON.stringify(map)),
+          set(Homey, 'op_mode', document.getElementById('op-mode').value),
+          set(Homey, 'anchor', anchor),
+          set(Homey, 'main_fuse_a', fuse),
+          set(Homey, 'phases', phases),
+          set(Homey, 'price_gate_ore', Number(document.getElementById('price-gate').value) || 300),
+          set(Homey, 'price_area', document.getElementById('price-area').value || ''),
+          set(Homey, 'matrix_override', JSON.stringify(override)),
+        ]).then(function () {
+          existingMap = map;
+          setStatus(t('Saved ✓', 'Sparat ✓'));
+          btn.disabled = false;
+        }).catch(function (err) { setStatus(t('Save failed: ', 'Kunde inte spara: ') + err); btn.disabled = false; });
+      });
+    }
+  </script>
+</body>
+</html>

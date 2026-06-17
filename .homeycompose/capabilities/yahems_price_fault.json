@@ -1,0 +1,11 @@
+{
+  "type": "boolean",
+  "title": { "en": "YAHEMS · Price feed fault", "sv": "YAHEMS · Prisfel" },
+  "titleTrue": { "en": "Price unavailable", "sv": "Pris saknas" },
+  "titleFalse": { "en": "Price OK", "sv": "Pris OK" },
+  "uiComponent": "sensor",
+  "getable": true,
+  "setable": false,
+  "insights": true,
+  "icon": "/assets/icon.svg"
+}
