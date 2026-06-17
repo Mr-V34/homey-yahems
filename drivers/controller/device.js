@@ -709,8 +709,13 @@ module.exports = class ControllerDevice extends Homey.Device {
     this._windows = engine.windowAverages(this._samples, now);
     this._avg15 = engine.fifteenMinAverage(this._windows);
 
-    // If stale OR implausible: force DEFCON 3 (fail safe — frost + comfort preserved).
-    const defcon = isFault ? 3 : engine.defconFromNet(r.average, anchor);
+    // DEFCON judges the 15-min average — the same window a grid power tariff bills.
+    // This is deliberately stable: a brief appliance spike no longer flips the
+    // ladder. (Before the first sub-window has data, _avg15 already equals the
+    // first sample, so there is no warm-up gap; r.average is only a safety
+    // fallback.) If stale OR implausible: force DEFCON 3 (fail safe).
+    const judgedW = Number.isFinite(this._avg15) ? this._avg15 : r.average;
+    const defcon = isFault ? 3 : engine.defconFromNet(judgedW, anchor);
 
     // Update capabilities (own-capability writes — not actuation).
     await this.setCapabilityValue('measure_power', r.average).catch(this.error);

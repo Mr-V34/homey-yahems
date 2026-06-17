@@ -44,9 +44,12 @@ const avg15 = engine.fifteenMinAverage(windows);            // mean of the avail
 ```
 
 `yahems_avg15` has its **own YAHEMS insight** (graph), and both the value and its
-3×5-minute breakdown appear on the overview/status page. It is informational — the
-DEFCON ladder itself still judges the responsive short average above, so a sustained
-peak shows up immediately rather than 15 minutes late.
+3×5-minute breakdown appear on the overview/status page. **The DEFCON ladder judges
+this 15-min average** — the same window a grid power tariff bills — so the level is
+deliberately stable: a brief appliance spike no longer flips the whole house to a
+critical peak. The short `measure_power` average is the live "Now" reading shown
+alongside it. (Before the first sub-window has data, the 15-min average already
+equals the first sample, so there is no warm-up gap.)
 
 ### Status indicators on the controller
 
