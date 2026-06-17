@@ -105,6 +105,7 @@
 
   <h2 id="h-custom"></h2>
   <div class="card">
+    <p class="hint" id="custom-hint"></p>
     <div id="custom"></div>
     <button class="smallbtn" id="add-custom"></button>
   </div>
@@ -190,12 +191,10 @@
           + ' · ' + t('Now', 'Nu') + ': ' + (st.power != null ? Math.round(st.power) + ' W' : '—');
         box.appendChild(head);
 
-        // 15-minute average (the billed figure) + its three 5-minute sub-averages.
+        // 7.5-minute rolling average — the figure DEFCON is judged on.
         var avg = document.createElement('div'); avg.className = 'hint'; avg.style.marginBottom = '8px';
-        var wins = (st.windows || []).map(function (w) { return w == null ? '—' : Math.round(w) + ' W'; }).join(' · ');
-        avg.textContent = t('15-min average', '15-min snitt') + ': '
-          + (st.avg15 != null ? Math.round(st.avg15) + ' W' : t('warming up…', 'värms upp…'))
-          + (wins ? '  (3×5 min: ' + wins + ')' : '');
+        avg.textContent = t('7.5-min average', '7,5-min snitt') + ': '
+          + (st.avg != null ? Math.round(st.avg) + ' W' : t('warming up…', 'värms upp…'));
         box.appendChild(avg);
         var rows = (st.devices || []).map(function (dv) {
           return { label: (SV ? dv.labelSv : dv.labelEn), allowed: dv.allowed, detail: dv.detail, presence: dv.presence, bigLoad: dv.bigLoad };
@@ -279,6 +278,9 @@
       document.getElementById('h-devices').textContent = t('Your devices', 'Dina enheter');
       document.getElementById('h-custom').textContent = t('Your own consumers', 'Egna förbrukare');
       document.getElementById('add-custom').textContent = t('+ Add consumer', '+ Lägg till förbrukare');
+      document.getElementById('custom-hint').textContent = t(
+        'A name and mode is enough — each consumer gets its own YAHEMS status insight on the controller. Linking a Homey device is optional.',
+        'Ett namn och läge räcker — varje förbrukare får en egen YAHEMS-statusinsikt på kontrollern. Att koppla en Homey-enhet är valfritt.');
       document.getElementById('h-levels').textContent = t('How YAHEMS controls each level', 'Så styr YAHEMS varje nivå');
       document.getElementById('levels-lede').textContent = t(
         'Edit the setpoints (5 = surplus … 1 = critical). Contradictory edits are auto-corrected to the last safe values.',
@@ -599,9 +601,14 @@
       // Custom consumers
       var custom = [];
       document.querySelectorAll('#custom .custom-item').forEach(function (it, i) {
+        var nm = it.querySelector('.c-name').value;
         var d = it.querySelector('.c-device').value;
-        if (!d) return;
-        custom.push({ id: 'custom-' + i, name: it.querySelector('.c-name').value || ('Consumer ' + (i + 1)), deviceId: d, capability: 'measure_power', mode: it.querySelector('.c-mode').value });
+        // A custom consumer needs only a name + mode; the device is optional.
+        // Skip a row only if it is completely empty (no name and no device).
+        if (!nm && !d) return;
+        var cu = { id: 'custom-' + i, name: nm || ('Consumer ' + (i + 1)), mode: it.querySelector('.c-mode').value };
+        if (d) { cu.deviceId = d; cu.capability = 'measure_power'; }
+        custom.push(cu);
       });
       var control = (existingMap && existingMap.control) ? existingMap.control : { house_meter_present: false };
       return { inputs: inputs, control: control, controls: controls, custom: custom };

@@ -29,27 +29,30 @@ average is published as the controller's `measure_power` ("Now").
 const r = engine.rollingAverage(buffer, sample, 3); // { buffer, average }
 ```
 
-### The 15-minute average (`yahems_avg15`)
+### The 7.5-minute average (`yahems_avg`)
 
-Separately, YAHEMS tracks the figure a Swedish **effekttariff** actually bills: the
-average power over the last **15 minutes**, computed the same way the grid does — as
-**three consecutive 5-minute sub-averages**, then the mean of those. It is built
-from timestamped samples (not a fixed buffer), so it stays correct whatever the
-recompute cadence is, and each 5-minute sub-window is reported on its own.
+Separately, YAHEMS tracks a **7.5-minute rolling average** of net house power —
+half the grid's quarter-hour (15-min) billing window. This keeps the system *awake*:
+it tracks a building load quickly and reacts roughly twice as fast as a full 15-min
+window would, while still smoothing the 60-second instantaneous spikes that would
+otherwise make the level flap. It is built from timestamped samples (not a fixed
+buffer), so it stays correct whatever the recompute cadence is.
 
 ```js
-samples = engine.pushSample(samples, watts, Date.now()); // prunes > 15 min old
-const windows = engine.windowAverages(samples, Date.now()); // [recent, mid, oldest]
-const avg15 = engine.fifteenMinAverage(windows);            // mean of the available sub-averages
+samples = engine.pushSample(samples, watts, Date.now()); // prunes > 7.5 min old
+const avg = engine.windowAverage(samples, Date.now());   // rolling 7.5-min mean (or null while cold)
 ```
 
-`yahems_avg15` has its **own YAHEMS insight** (graph), and both the value and its
-3×5-minute breakdown appear on the overview/status page. **The DEFCON ladder judges
-this 15-min average** — the same window a grid power tariff bills — so the level is
-deliberately stable: a brief appliance spike no longer flips the whole house to a
-critical peak. The short `measure_power` average is the live "Now" reading shown
-alongside it. (Before the first sub-window has data, the 15-min average already
-equals the first sample, so there is no warm-up gap.)
+`yahems_avg` has its **own YAHEMS insight** (graph) and the value appears on the
+overview/status page. **The DEFCON ladder judges this 7.5-min average** — responsive
+but not jittery. The short `measure_power` average is the live "Now" reading shown
+alongside it. (Before the window has data, the 7.5-min average already equals the
+first sample, so there is no warm-up gap.)
+
+> **Hysteresis:** there is deliberately **no deadband** on the level today — the
+> 7.5-min window is the only smoothing. If a load proves to start/stop too often in
+> practice, a band-edge deadband (e.g. ~10 %) is a planned follow-up (see the
+> roadmap).
 
 ### Status indicators on the controller
 

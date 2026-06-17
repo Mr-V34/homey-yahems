@@ -56,7 +56,7 @@ module.exports = class ControllerDevice extends Homey.Device {
 
   async onInit() {
     this.buffer   = [];       // short rolling buffer for the responsive measure_power
-    this._samples = [];       // timestamped samples for the 15-min (3×5-min) average
+    this._samples = [];       // timestamped samples for the 7.5-min rolling average
     this._customTitles = {};  // last title pushed to each yahems_custom_N cap (avoids churn)
 
     // Electricity-price (elprisetjustnu.se) state — see _maybeRefreshPrices().
@@ -85,8 +85,14 @@ module.exports = class ControllerDevice extends Homey.Device {
     };
 
     // Ensure required capabilities exist (including yahems_source + yahems_fault).
-    for (const c of ['yahems_defcon', 'yahems_defcon_label', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_avg15', 'yahems_fault', 'yahems_price', 'yahems_price_fault']) {
+    for (const c of ['yahems_defcon', 'yahems_defcon_label', 'yahems_mode', 'yahems_source', 'measure_power', 'yahems_avg', 'yahems_fault', 'yahems_price', 'yahems_price_fault']) {
       if (!this.hasCapability(c)) await this.addCapability(c).catch(this.error);
+    }
+
+    // Remove retired capabilities (and their stale insight series) from devices
+    // paired before a rename. yahems_avg15 → yahems_avg (15-min → 7.5-min average).
+    for (const c of ['yahems_avg15']) {
+      if (this.hasCapability(c)) await this.removeCapability(c).catch(this.error);
     }
 
     // Guard: DEFAULT_MATRIX must always be monotone. Log if it ever isn't
@@ -285,10 +291,8 @@ module.exports = class ControllerDevice extends Homey.Device {
       defcon: this.getCapabilityValue('yahems_defcon'),
       source: this.getCapabilityValue('yahems_source'),
       power: this.getCapabilityValue('measure_power'),
-      // 15-min average + its three 5-minute sub-averages (newest first), so the
-      // overview can show both the value and how it is built up.
-      avg15: Number.isFinite(this._avg15) ? this._avg15 : null,
-      windows: Array.isArray(this._windows) ? this._windows : [null, null, null],
+      // 7.5-min rolling average — the figure DEFCON is judged on.
+      avg: Number.isFinite(this._avg) ? this._avg : null,
       devices: [],
       custom: [],
     };
@@ -850,21 +854,20 @@ module.exports = class ControllerDevice extends Homey.Device {
     const r = engine.rollingAverage(this.buffer, consumptionWClamped, 3);
     this.buffer = r.buffer;
 
-    // 15-minute average (three consecutive 5-minute sub-averages) — the figure a
-    // grid power tariff actually bills. Computed from timestamped samples so it is
-    // correct regardless of the 60 s recompute cadence. Kept separate from
-    // measure_power (the short, responsive value) for its own YAHEMS insight.
+    // 7.5-minute rolling average — half the grid's quarter-hour billing window, so
+    // it tracks a building load quickly while still smoothing 60 s spikes. Computed
+    // from timestamped samples so it is correct regardless of the recompute cadence.
+    // Kept separate from measure_power (the shorter, responsive value) for its own
+    // YAHEMS insight.
     const now = Date.now();
     this._samples = engine.pushSample(this._samples, consumptionWClamped, now);
-    this._windows = engine.windowAverages(this._samples, now);
-    this._avg15 = engine.fifteenMinAverage(this._windows);
+    this._avg = engine.windowAverage(this._samples, now);
 
-    // DEFCON judges the 15-min average — the same window a grid power tariff bills.
-    // This is deliberately stable: a brief appliance spike no longer flips the
-    // ladder. (Before the first sub-window has data, _avg15 already equals the
-    // first sample, so there is no warm-up gap; r.average is only a safety
-    // fallback.) If stale OR implausible: force DEFCON 3 (fail safe).
-    const judgedW = Number.isFinite(this._avg15) ? this._avg15 : r.average;
+    // DEFCON judges the 7.5-min average — responsive but not jittery. (Before the
+    // first window has data, _avg already equals the first sample, so there is no
+    // warm-up gap; r.average is only a safety fallback.) If stale OR implausible:
+    // force DEFCON 3 (fail safe).
+    const judgedW = Number.isFinite(this._avg) ? this._avg : r.average;
     const defcon = isFault ? 3 : engine.defconFromNet(judgedW, anchor);
 
     // Effective electricity price (öre/kWh). Precedence: a mapped live price device
@@ -881,9 +884,9 @@ module.exports = class ControllerDevice extends Homey.Device {
     await this.setCapabilityValue('yahems_defcon', defcon).catch(this.error);
     await this.setCapabilityValue('yahems_defcon_label', `d${defcon}`).catch(this.error);
     await this.setCapabilityValue('yahems_fault',  isFault).catch(this.error);
-    // Only publish the 15-min average once a sub-window has data (avoid a fake 0).
-    if (Number.isFinite(this._avg15)) {
-      await this.setCapabilityValue('yahems_avg15', this._avg15).catch(this.error);
+    // Only publish the 7.5-min average once the window has data (avoid a fake 0).
+    if (Number.isFinite(this._avg)) {
+      await this.setCapabilityValue('yahems_avg', this._avg).catch(this.error);
     }
     // Electricity price + feed-fault indicator. Only publish a number when known.
     if (Number.isFinite(effectivePriceOre)) {

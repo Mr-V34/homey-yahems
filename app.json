@@ -563,7 +563,7 @@
       "class": "other",
       "capabilities": [
         "yahems_defcon_label",
-        "yahems_avg15",
+        "yahems_avg",
         "measure_power",
         "yahems_mode",
         "yahems_source",
@@ -737,15 +737,15 @@
       "insights": true,
       "icon": "/assets/icon.svg"
     },
-    "yahems_avg15": {
+    "yahems_avg": {
       "type": "number",
       "title": {
-        "en": "YAHEMS · 15-min average",
-        "sv": "YAHEMS · 15-min snitt"
+        "en": "YAHEMS · 7.5-min average",
+        "sv": "YAHEMS · 7,5-min snitt"
       },
       "desc": {
-        "en": "Net house power averaged over the last 15 minutes (three 5-minute sub-averages) — the figure a grid power tariff bills.",
-        "sv": "Husets nettoeffekt i snitt över senaste 15 minuterna (tre 5-minuterssnitt) — värdet en effekttariff debiterar."
+        "en": "Net house power averaged over the last 7.5 minutes — a responsive half of the grid's quarter-hour billing window.",
+        "sv": "Husets nettoeffekt i snitt över senaste 7,5 minuterna — en responsiv halva av elnätets kvartsdebiteringsfönster."
       },
       "units": {
         "en": "W",
