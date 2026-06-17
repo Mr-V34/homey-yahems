@@ -1,9 +1,11 @@
 {
   "id": "com.v34.yahems",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "compatibility": ">=5.0.0",
   "sdk": 3,
-  "platforms": ["local"],
+  "platforms": [
+    "local"
+  ],
   "name": {
     "en": "YAHEMS",
     "sv": "YAHEMS"
@@ -13,8 +15,26 @@
     "sv": "DEFCON-energistyrning — sänk elräkningen, sömlöst."
   },
   "tags": {
-    "en": ["energy", "battery", "solar", "ev charging", "peak shaving", "spot price", "tariff", "defcon"],
-    "sv": ["energi", "batteri", "solceller", "elbilsladdning", "effekttoppar", "spotpris", "tariff", "defcon"]
+    "en": [
+      "energy",
+      "battery",
+      "solar",
+      "ev charging",
+      "peak shaving",
+      "spot price",
+      "tariff",
+      "defcon"
+    ],
+    "sv": [
+      "energi",
+      "batteri",
+      "solceller",
+      "elbilsladdning",
+      "effekttoppar",
+      "spotpris",
+      "tariff",
+      "defcon"
+    ]
   },
   "category": "energy",
   "brandColor": "#F2600C",
@@ -29,7 +49,9 @@
   },
   "contributors": {
     "developers": [
-      { "name": "B.Frank" }
+      {
+        "name": "B.Frank"
+      }
     ]
   },
   "bugs": {
@@ -38,12 +60,29 @@
   "source": "https://github.com/Mr-V34/homey-yahems",
   "homepage": "https://www.v34.com",
   "support": "mailto:info@v34.com",
-  "permissions": ["homey:manager:api"],
+  "permissions": [
+    "homey:manager:api"
+  ],
   "api": {
-    "getDevices": { "method": "get", "path": "/devices" },
-    "getSignals": { "method": "get", "path": "/signals" },
-    "getLevels": { "method": "get", "path": "/levels" },
-    "getCatalog": { "method": "get", "path": "/catalog" },
-    "getStatus": { "method": "get", "path": "/status" }
+    "getDevices": {
+      "method": "get",
+      "path": "/devices"
+    },
+    "getSignals": {
+      "method": "get",
+      "path": "/signals"
+    },
+    "getLevels": {
+      "method": "get",
+      "path": "/levels"
+    },
+    "getCatalog": {
+      "method": "get",
+      "path": "/catalog"
+    },
+    "getStatus": {
+      "method": "get",
+      "path": "/status"
+    }
   }
 }
